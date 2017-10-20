@@ -120,4 +120,18 @@ static int fpset_add2(struct fpset *set, uint64_t fp, size_t i1, size_t i2)
     return -1;
 }
 
+bool fpset_has(struct fpset *set, uint64_t fp)
+{
+    size_t mask = ((size_t) 1 << set->logsize) - 1;
+    size_t i1 = (fp >> 32) & mask;
+    size_t i2 = (i1 ^ fp) & mask;
+    if (W_ISSET(set->fill, i1))
+	if (fp == set->buckets[i1][0] || fp == set->buckets[i1][1])
+	    return true;
+    if (W_ISSET(set->fill, i2))
+	if (fp == set->buckets[i2][0] || fp == set->buckets[i2][1])
+	    return true;
+    return false;
+}
+
 // ex:set ts=8 sts=4 sw=4 noet:
