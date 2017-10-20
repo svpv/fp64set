@@ -120,6 +120,60 @@ static int fpset_add2(struct fpset *set, uint64_t fp, size_t i1, size_t i2)
     return -1;
 }
 
+// Add a fingerprint to one of its buckets.  If there's no free slot,
+// run the "kick loop" to remap existing fingerprints.  If that fails,
+// the existing fingerprint that was kicked out is returned via ofpp.
+static int fpset_addk(struct fpset *set, uint64_t fp, uint64_t *ofpp)
+{
+    size_t mask = ((size_t) 1 << set->logsize) - 1;
+    size_t i1 = (fp >> 32) & mask;
+    size_t i2 = (i1 ^ fp) & mask;
+    int n = fpset_add2(set, fp, i1, i2);
+    if (n >= 0) {
+	set->n += n;
+	return 0;
+    }
+    // Assume that the fingerprint is the only "entropy" we now have.
+    uint64_t seed = fp;
+    // Randomly pick i1 or i2.  The fingerprint will be placed in this bucket,
+    // and one of the two fingerprints which already occupy the bucket will be
+    // "kicked out" to its second bucket.
+    size_t i = ((seed >> 37) ^ (seed >> 13)) & 1 ? i1 : i2;
+#define MAXKICK 16
+    for (int k = 0; k < MAXKICK; k++) {
+	// Randomly select bucket[i][0] or bucket[i][1].
+	// This is the "other" fingerprint which shall be kicked out.
+	size_t j = ((seed >> 33) ^ (seed >> 17)) & 1;
+	uint64_t ofp = set->buckets[i][j];
+	// Swap fp and ofp.
+	set->buckets[i][j] = fp;
+	fp = ofp;
+	// Try to place the fingerprint to its second bucket.
+	i = (i ^ fp) & mask;
+	n = fpset_add1(set, fp, i);
+	if (n >= 0) {
+	    // No dups are possible at this stage.
+	    assert(n == 1);
+	    set->n += n;
+	    return 1;
+	}
+	// Add the fingerprint to the entropy.
+#define rotl64(x, r) ((x << r) | (x >> (64 - r)))
+	seed ^= rotl64(fp, 37);
+    }
+    *ofpp = fp;
+    return -1;
+}
+
+int fpset_add(struct fpset *set, uint64_t fp)
+{
+    uint64_t ofp;
+    int ret = fpset_addx(set, fp, &ofp);
+    // TODO: rebuild the table with ++logsize.
+    assert(fp >= 0);
+    return ret;
+}
+
 bool fpset_has(struct fpset *set, uint64_t fp)
 {
     size_t mask = ((size_t) 1 << set->logsize) - 1;
