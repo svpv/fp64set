@@ -168,10 +168,46 @@ static int fpset_addk(struct fpset *set, uint64_t fp, uint64_t *ofpp)
 int fpset_add(struct fpset *set, uint64_t fp)
 {
     uint64_t ofp;
-    int ret = fpset_addx(set, fp, &ofp);
-    // TODO: rebuild the table with ++logsize.
-    assert(fp >= 0);
-    return ret;
+    int ret = fpset_addk(set, fp, &ofp);
+    if (ret >= 0)
+	return 0;
+    // If the fill factor is already below 50%, it's a failure.
+    if (set->n < (size_t) 1 << set->logsize)
+	return -1;
+    // Need to rebuild the table with the increased logsize.
+    size_t logsize = set->logsize++;
+    assert(set->logsize <= 32);
+    // Save the existing data.
+    uint64_t (*buckets)[2] = set->buckets;
+    unsigned long *fill = set->fill;
+    // Reallocate the structure.
+    if (!fpset_alloc(set)) {
+	set->buckets = buckets;
+	set->logsize--;
+	return -1;
+    }
+    // Have that many fingerprints, not including the one that was kicked out.
+    size_t oldn = set->n;
+    // Insert the fingerprint that was kicked out.
+    size_t mask = ((size_t) 1 << set->logsize) - 1;
+    fpset_add1(set, ofp, (ofp >> 32) & mask);
+    set->n = 1;
+    // Reinsert the existing fingerprints.
+    for (size_t i = 0; i < (size_t) 1 << logsize; i++) {
+	if (!W_ISSET(fill, i))
+	    continue;
+	if (fpset_addk(set, buckets[i][0], &ofp) < 0)
+	    return -2;
+	if (buckets[i][0] == buckets[i][1])
+	    continue;
+	if (fpset_addk(set, buckets[i][1], &ofp) < 0)
+	    return -2;
+    }
+    // No dups could have been discovered.
+    assert(set->n == oldn + 1);
+    // Allocated in a single chunk.
+    free(buckets);
+    return 1;
 }
 
 bool fpset_has(struct fpset *set, uint64_t fp)
