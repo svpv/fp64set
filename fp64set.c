@@ -1,58 +1,129 @@
 #include <stdlib.h>
-#include <string.h>
 #include <assert.h>
+#include <limits.h>
+#include <errno.h>
 #include "fpset.h"
 
+// Slots per bucket (2, 3, or 4).
+#ifndef FPSET_BUCKETSIZE
+#define FPSET_BUCKETSIZE 2
+#elif FPSET_BUCKETSIZE < 2 || FPSET_BUCKETSIZE > 4
+#error "bad FPSET_BUCKETSIZE value"
+#endif
+
 struct fpset {
-    // The total number of fingerprints.
-    size_t n;
+    // The total number of unique fingerprints added.
+    size_t cnt;
     // The number of buckets, the logarithm.
-    unsigned logsize;
-    // The buckets; each bucket has 2 fingerprint slots.
-    uint64_t (*buckets)[2];
-    // Bit vector, indicates which buckets are in use.
-    unsigned long *fill;
+    int logsize;
+    // The number of buckets - 1, helps indexing into the buckets.
+    size_t mask;
+    // The buckets (malloc'd); each bucket has a few fingerprint slots.
+    uint64_t (*bb)[FPSET_BUCKETSIZE];
 };
 
-// Implements bit vectors atop of unsigned long words (hence W),
-// similar to FD_SET macros in <sys/select.h>.
-#define W_BITS (8 * sizeof(unsigned long))
-#define W_ELT(n) ((n) / W_BITS)
-#define W_MASK(n) (1UL << ((n) % W_BITS))
-#define W_SIZE(n) (((n) + (W_BITS - 1)) / W_BITS)
-#define W_BYTES(n) (W_SIZE(n) * sizeof(unsigned long))
-#define W_SET(w, n) ((void) ((w)[W_ELT(n)] |= W_MASK(n)))
-#define W_CLR(w, n) ((void) ((w)[W_ELT(n)] &= ~W_MASK(n)))
-#define W_ISSET(w, n) (((w)[W_ELT(n)] & W_MASK(n)) != 0)
+// Make two indexes out of a fingerprint.
+// Fingerprints are treated as two 32-bit hash values for this purpose.
+#define FP2I(fp, mask)		\
+    i1 = (fp >> 00) & mask;	\
+    i2 = (fp >> 32) & mask
+// Further identify the buckets.
+#define FP2IB			\
+    FP2I(fp, set->mask);	\
+    b1 = set->bb[i1];		\
+    b2 = set->bb[i2]
+// Further declare vars.
+#define dFP2IB			\
+    size_t i1, i2;		\
+    uint64_t *b1, *b2;		\
+    FP2IB
 
-// Allocates set->buckets and set->fill in a single chunk.
-static bool fpset_alloc(struct fpset *set)
+// Check if a fingerprint has already been inserted.  I trust gcc to unroll
+// the loop properly.  Note that only two memory locations are accessed
+// (which translates into only two cache lines, unless FPSET_BUCKETSIZE is 3);
+// this is one reason why fpset_has() is 2-3 times faster than
+// std::unordered_set<uint64_t>::find().
+static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2)
 {
-    size_t n = (size_t) 1 << set->logsize;
-    size_t fillsize = W_BYTES(n);
-    size_t allocsize = n * sizeof(*set->buckets) + fillsize;
-    set->buckets = malloc(allocsize);
-    if (!set->buckets)
-	return false;
-    set->fill = (void *) (set->buckets + n);
-    memset(set->fill, 0, fillsize);
-    return true;
+#ifdef FPSET_PROBA
+    // This works faster when running Monte Carlo simulations to estimate
+    // the probability of failure (in this case, fingerprints are different
+    // and equality almost never holds).
+    for (int j = 0; j < FPSET_BUCKETSIZE; j++)
+	if (fp == b1[j] || fp == b2[j])
+	    return true;
+    return false;
+#else
+    // This works faster with real data, where equality sometimes holds.
+    // However, if the CPU tries to bet on when and where equality holds,
+    // it loses.  It is best to circumvent branch prediction entirely.
+    bool has = false;
+    for (int j = 0; j < FPSET_BUCKETSIZE; j++)
+	has |= (fp == b1[j]) | (fp == b2[j]);
+    return has;
+#endif
 }
 
-struct fpset *fpset_new(unsigned logsize)
+// Test if a fingerprint at bb[i][*] is valid (otherwise, the slot is free).
+// Note that a bucket can only keep hold of such a fingerprint that hashes
+// into the bucket.  This obviates the need for separate bookkeeping.
+static inline bool fpok(uint64_t fp, size_t i, size_t mask)
 {
-    assert(logsize >= 1);
-    // Each bucket takes 16+ bytes.
-    assert(logsize < 8 * sizeof(size_t) - 4);
-    // Each fingerprint is treated as two 32-bit hashes.
-    assert(logsize <= 32);
+    size_t i1, i2;
+    FP2I(fp, mask);
+#ifdef FPSET_PROBA
+    return i == i1 || i == i2;
+#else
+    return (i == i1) | (i == i2);
+#endif
+}
+
+// Ensure that logsize (the number of buckets) is not too big.
+bool cklogsize(int logsize)
+{
+    if (sizeof(size_t) > 4) {
+	// The only limitation on 64-bit platforms is that we can run out
+	// of 32-bit hash values.  With FPSET_BUCKETSIZE=2, the buckets would
+	// occupy 16 bytes * 4G = 64G RAM, which currently (as of late 2017)
+	// matches maximum RAM supported by high-end desktop CPUs.
+	// Furthermore, it doesn't make much sense to build even bigger tables
+	// of 64-bit fingerprints, because, exactly at this point, birthday
+	// collisions start to take off (and so fingerprints become less useful
+	// for identifying data items).
+	return logsize <= 32;
+    }
+    // The limit is more stringent on 32-bit systems.  We only check that the
+    // buckets occupy less than 2^32 bytes (or, in other words, that the byte
+    // count would fit into size_t); malloc may further impose its own limits.
+    // If a bucket occupies 16 bytes, this reduces the 32-bit space by 4 bits;
+    // the check then goes like "logsize < 28" which translates into
+    // "your appetites be must less than 4G which is the entire address space".
+    // Thus logsize=27 limits the bucket memory by 2G for FPSET_BUCKETSIZE=2
+    // and 3G for FPSET_BUCKETSIZE=3; FPSET_BUCKETSIZE=4 needs a correction.
+    return logsize < CHAR_BIT * sizeof(size_t) - 4 - (FPSET_BUCKETSIZE > 3);
+}
+
+struct fpset *fpset_new(int logsize)
+{
+    assert(logsize >= 0);
+    // The number of fingerprints -> the number of buckets.
+    logsize -= FPSET_BUCKETSIZE > 2;
+    // TODO: tune the minimum number of buckets for some probability.
+    if (logsize < 4)
+	logsize = 4;
+    else if (!cklogsize(logsize))
+	return errno = E2BIG, NULL;
     struct fpset *set = malloc(sizeof *set);
     if (!set)
 	return NULL;
-    set->n = 0;
+    set->cnt = 0;
     set->logsize = logsize;
-    if (!fpset_alloc(set))
+    set->mask = (size_t) 1 << logsize;
+    set->bb = calloc(set->mask--, sizeof *set->bb);
+    if (!set->bb)
 	return free(set), NULL;
+    for (int n = 0; n < FPSET_BUCKETSIZE; n++)
+	set->bb[0][n] = ~(uint64_t) 0;
     return set;
 }
 
@@ -60,168 +131,107 @@ void fpset_free(struct fpset *set)
 {
     if (!set)
 	return;
-    free(set->buckets);
+#ifdef DEBUG
+    // The number of fingerprints must match the occupied slots.
+    size_t cnt = 0;
+    for (size_t i = 0; i <= set->mask; i++)
+	for (int n = 0; n < FPSET_BUCKETSIZE; n++)
+	    cnt += fpok(set->bb[i][n], i, set->mask);
+    assert(set->cnt == cnt);
+#endif
+    free(set->bb);
     free(set);
-}
-
-// Place a fingerprint at its index; set->n should be updated by the caller.
-static int fpset_add1(struct fpset *set, uint64_t fp, size_t i)
-{
-    // Activate the bucket.
-    if (!W_ISSET(set->fill, i)) {
-	W_SET(set->fill, i);
-	// Set both buckets to the same value, this will indicate
-	// that only one bucket out of two is in use.
-	set->buckets[i][0] = set->buckets[i][1] = fp;
-	return +1;
-    }
-    // Already added?
-    if (fp == set->buckets[i][0] || fp == set->buckets[i][1])
-	return 0;
-    // Has a free slot?
-    if (set->buckets[i][0] == set->buckets[i][1]) {
-	set->buckets[i][0] = fp;
-	return +1;
-    }
-    // Both buckets occupied.
-    return -1;
-}
-
-// As the theory goes, each fingerprint can reside at either of its two buckets.
-static int fpset_add2(struct fpset *set, uint64_t fp, size_t i1, size_t i2)
-{
-    bool isset1 = W_ISSET(set->fill, i1);
-    bool isset2 = W_ISSET(set->fill, i2);
-    // Already added?
-    if (isset1 && (fp == set->buckets[i1][0] || fp == set->buckets[i1][1]))
-	return 0;
-    if (isset2 && (fp == set->buckets[i2][0] || fp == set->buckets[i2][1]))
-	return 0;
-    // Activate a bucket.
-    if (!isset1) {
-	W_SET(set->fill, i1);
-	set->buckets[i1][0] = set->buckets[i1][1] = fp;
-	return +1;
-    }
-    if (!isset2) {
-	W_SET(set->fill, i2);
-	set->buckets[i2][0] = set->buckets[i2][1] = fp;
-	return +1;
-    }
-    // Has a free slot?
-    if (set->buckets[i1][0] == set->buckets[i1][1]) {
-	set->buckets[i1][0] = fp;
-	return +1;
-    }
-    if (set->buckets[i2][0] == set->buckets[i2][1]) {
-	set->buckets[i2][0] = fp;
-	return +1;
-    }
-    return -1;
-}
-
-// Add a fingerprint to one of its buckets.  If there's no free slot,
-// run the "kick loop" to remap existing fingerprints.  If that fails,
-// the existing fingerprint that was kicked out is returned via ofpp.
-static int fpset_addk(struct fpset *set, uint64_t fp, uint64_t *ofpp)
-{
-    size_t mask = ((size_t) 1 << set->logsize) - 1;
-    size_t i1 = (fp >> 32) & mask;
-    size_t i2 = (i1 ^ fp) & mask;
-    int n = fpset_add2(set, fp, i1, i2);
-    if (n >= 0) {
-	set->n += n;
-	return 0;
-    }
-    // Assume that the fingerprint is the only "entropy" we now have.
-    uint64_t seed = fp;
-    // Randomly pick i1 or i2.  The fingerprint will be placed in this bucket,
-    // and one of the two fingerprints which already occupy the bucket will be
-    // "kicked out" to its second bucket.
-    size_t i = ((seed >> 37) ^ (seed >> 13)) & 1 ? i1 : i2;
-#define MAXKICK 16
-    for (int k = 0; k < MAXKICK; k++) {
-	// Randomly select bucket[i][0] or bucket[i][1].
-	// This is the "other" fingerprint which shall be kicked out.
-	size_t j = ((seed >> 33) ^ (seed >> 17)) & 1;
-	uint64_t ofp = set->buckets[i][j];
-	// Swap fp and ofp.
-	set->buckets[i][j] = fp;
-	fp = ofp;
-	// Try to place the fingerprint to its second bucket.
-	i = (i ^ fp) & mask;
-	n = fpset_add1(set, fp, i);
-	if (n >= 0) {
-	    // No dups are possible at this stage.
-	    assert(n == 1);
-	    set->n += n;
-	    return 1;
-	}
-	// Add the fingerprint to the entropy.
-#define rotl64(x, r) ((x << r) | (x >> (64 - r)))
-	seed ^= rotl64(fp, 37);
-    }
-    *ofpp = fp;
-    return -1;
-}
-
-int fpset_add(struct fpset *set, uint64_t fp)
-{
-    uint64_t ofp;
-    int ret = fpset_addk(set, fp, &ofp);
-    if (ret >= 0)
-	return 0;
-    // If the fill factor is already below 50%, it's a failure.
-    if (set->n < (size_t) 1 << set->logsize)
-	return -1;
-    // Need to rebuild the table with the increased logsize.
-    size_t logsize = set->logsize++;
-    assert(set->logsize <= 32);
-    // Save the existing data.
-    uint64_t (*buckets)[2] = set->buckets;
-    unsigned long *fill = set->fill;
-    // Reallocate the structure.
-    if (!fpset_alloc(set)) {
-	set->buckets = buckets;
-	set->logsize--;
-	return -1;
-    }
-    // Have that many fingerprints, not including the one that was kicked out.
-    size_t oldn = set->n;
-    // Insert the fingerprint that was kicked out.
-    size_t mask = ((size_t) 1 << set->logsize) - 1;
-    fpset_add1(set, ofp, (ofp >> 32) & mask);
-    set->n = 1;
-    // Reinsert the existing fingerprints.
-    for (size_t i = 0; i < (size_t) 1 << logsize; i++) {
-	if (!W_ISSET(fill, i))
-	    continue;
-	if (fpset_addk(set, buckets[i][0], &ofp) < 0)
-	    return -2;
-	if (buckets[i][0] == buckets[i][1])
-	    continue;
-	if (fpset_addk(set, buckets[i][1], &ofp) < 0)
-	    return -2;
-    }
-    // No dups could have been discovered.
-    assert(set->n == oldn + 1);
-    // Allocated in a single chunk.
-    free(buckets);
-    return 1;
 }
 
 bool fpset_has(struct fpset *set, uint64_t fp)
 {
-    size_t mask = ((size_t) 1 << set->logsize) - 1;
-    size_t i1 = (fp >> 32) & mask;
-    size_t i2 = (i1 ^ fp) & mask;
-    if (W_ISSET(set->fill, i1))
-	if (fp == set->buckets[i1][0] || fp == set->buckets[i1][1])
-	    return true;
-    if (W_ISSET(set->fill, i2))
-	if (fp == set->buckets[i2][0] || fp == set->buckets[i2][1])
-	    return true;
+    dFP2IB;
+    return has(fp, b1, b2);
+}
+
+// That much one needs to know upon the first reading.
+// The reset is fpset_add() stuff.
+
+static inline bool addNonLast1(uint64_t fp, uint64_t *b, size_t n)
+{
+    if (b[n] == b[n+1])
+	return b[n] = fp, true;
     return false;
+}
+
+static inline bool addNonLast2(uint64_t fp, uint64_t *b1, uint64_t *b2, size_t n)
+{
+    return addNonLast1(fp, b1, n) || addNonLast1(fp, b2, n);
+}
+
+static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n, size_t mask)
+{
+    if (!fpok(b[n], i, mask))
+	return b[n] = fp, true;
+    return false;
+}
+
+static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, size_t i2, size_t n, size_t mask)
+{
+    return addLast1(fp, b1, i1, n, mask) || addLast1(fp, b2, i2, n, mask);
+}
+
+#define ALWAYS_GO_LEFT		\
+    do {			\
+	if (i1 <= i2)		\
+	    break;		\
+	size_t ix = i1;		\
+	uint64_t *bx = b1;	\
+	i1 = i2, i2 = ix;	\
+	b1 = b2, b2 = bx;	\
+    } while (0)
+
+static inline bool addk(struct fpset *set, uint64_t *b,
+	size_t i, uint64_t fp, uint64_t *ofp)
+{
+    int n = 2 * set->logsize;
+    do {
+	// Put at the top, kick out from the bottom.
+	// Using *ofp as a temporary register.
+	*ofp = b[0];
+	for (int i = 0; i < FPSET_BUCKETSIZE-1; i++)
+	    b[i] = b[i+1];
+	b[FPSET_BUCKETSIZE-1] = fp, fp = *ofp;
+	// Ponder over the fingerprint that's been kicked out.
+	dFP2IB;
+	// Find out the alternative bucket.
+	if (i == i1)
+	    i = i2, b = b2;
+	else
+	    i = i1, b = b1;
+	for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
+	    if (addNonLast1(fp, b, n))
+		return set->cnt++, true;
+	if (addLast1(fp, b, i, FPSET_BUCKETSIZE-1, set->mask))
+	    return set->cnt++, true;
+	// Keep trying.
+    } while (n-- >= 0);
+    // Ran out of tries? ofp already set.
+    return false;
+}
+
+int fpset_add(struct fpset *set, uint64_t fp)
+{
+    dFP2IB;
+    if (has(fp, b1, b2))
+	return 0;
+    ALWAYS_GO_LEFT;
+    if (addNonLast2(fp, b1, b2, 0))
+	return set->cnt++, 1;
+    for (int n = 1; n < FPSET_BUCKETSIZE-1; n++)
+	if (addNonLast2(fp, b1, b2, n))
+	    return set->cnt++, 1;
+    if (addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1, set->mask))
+	return set->cnt++, 1;
+    if (addk(set, b1, i1, fp, &fp))
+	return set->cnt++, 1;
+    return -1;
+    // TODO: rebuild the table with logsize + 1.
 }
 
 // ex:set ts=8 sts=4 sw=4 noet:

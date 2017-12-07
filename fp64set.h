@@ -32,7 +32,7 @@ extern "C" {
 // Create a new set of fingerprints.  The logsize parameter specifies the
 // expected number of elements in the set (e.g. logsize = 10 for 1024).
 // Returns NULL on malloc failure.
-struct fpset *fpset_new(unsigned logsize);
+struct fpset *fpset_new(int logsize);
 void fpset_free(struct fpset *set);
 
 // Add a 64-bit fingerprint to the set.  Returns -1 on malloc failure.
