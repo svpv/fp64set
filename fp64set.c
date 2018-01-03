@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Alexey Tourbin
+// Copyright (c) 2017, 2018 Alexey Tourbin
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -196,6 +196,24 @@ static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, 
     return addLast1(fp, b1, i1, n, mask) || addLast1(fp, b2, i2, n, mask);
 }
 
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i686__))
+#define ALWAYS_GO_LEFT			\
+    do {				\
+	size_t ix;			\
+	uint64_t *bx;			\
+	__asm__(			\
+	    "cmp %[i1],%[i2]\n\t"	\
+	    "mov %[b1],%[bx]\n\t"	\
+	    "mov %[i1],%[ix]\n\t"	\
+	    "cmovb %[b2],%[b1]\n\t"	\
+	    "cmovb %[i2],%[i1]\n\t"	\
+	    "cmovb %[bx],%[b2]\n\t"	\
+	    "cmovb %[ix],%[i2]"		\
+	    : [i1] "+r" (i1), [i2] "+r" (i2), [ix] "=rm" (ix), \
+	      [b1] "+r" (b1), [b2] "+r" (b2), [bx] "=rm" (bx)  \
+	    :: "cc");			\
+    } while (0)
+#else
 #define ALWAYS_GO_LEFT		\
     do {			\
 	if (i1 <= i2)		\
@@ -205,6 +223,7 @@ static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, 
 	i1 = i2, i2 = ix;	\
 	b1 = b2, b2 = bx;	\
     } while (0)
+#endif
 
 static inline bool addk(struct fpset *set, uint64_t *b,
 	size_t i, uint64_t fp, uint64_t *ofp)
