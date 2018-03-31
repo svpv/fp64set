@@ -45,3 +45,13 @@ static inline uint64_t rnd(void)
     x = x * 0x5851f42d4c957f2d + 0x14057b7ef767814f;
     return ret;
 }
+
+// A simplified fpset_add() clone, returns the number of kicks.
+static inline int proba_add(struct fpset *set, uint64_t fp)
+{
+    dFP2IB;
+    // No dups during simulations, because of full-period LCG.
+    if (justAdd(fp, b1, i1, b2, i2))
+	return set->cnt++, 0;
+    return kickAdd(set, fp, b1, i1, &fp);
+}

@@ -170,6 +170,8 @@ bool fpset_has(struct fpset *set, uint64_t fp)
 // That much one needs to know upon the first reading.
 // The reset is fpset_add() stuff.
 
+// When trying to add to a non-last slot in a bucket,
+// there is even a simpler way to check if that slot is occupied.
 static inline bool addNonLast1(uint64_t fp, uint64_t *b, size_t n)
 {
     if (b[n] == b[n+1])
@@ -177,11 +179,7 @@ static inline bool addNonLast1(uint64_t fp, uint64_t *b, size_t n)
     return false;
 }
 
-static inline bool addNonLast2(uint64_t fp, uint64_t *b1, uint64_t *b2, size_t n)
-{
-    return addNonLast1(fp, b1, n) || addNonLast1(fp, b2, n);
-}
-
+// When adding to the last slot in a bucket, need to use freeSlot.
 static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n)
 {
     if (freeSlot(b[n], i))
@@ -189,16 +187,40 @@ static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n)
     return false;
 }
 
-static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, size_t i2, size_t n)
+#define addNonLast2(fp, b1, b2, n) \
+	addNonLast1(fp, b1, n) || \
+	addNonLast1(fp, b2, n)
+#define addLast2(fp, b1, i1, b2, i2, n) \
+	addLast1(fp, b1, i1, n) || \
+	addLast1(fp, b2, i2, n)
+
+// Try to add a fingerprint to either of its buckets.
+static inline bool justAdd(uint64_t fp, uint64_t *b1, uint64_t *b2)
 {
-    return addLast1(fp, b1, i1, n) || addLast1(fp, b2, i2, n);
+    for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
+	if (addNonLast2(fp, b1, b2, n))
+	    return true;
+    return false;
 }
 
-static inline bool addk(struct fpset *set, uint64_t *b,
-	size_t i, uint64_t fp, uint64_t *ofp)
+// I found it's better to refactor justAdd() as a macro, otherwise
+// the code works slower (possibly because of too many arguments).
+#define justAdd(fp, b1, i1, b2, i2) \
+	justAdd(fp, b1, b2) || \
+	addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1)
+
+// When all slots for a fingerprint are occupied, insertion "kicks out"
+// an already existing fingerprint and tries to place it into an alternative
+// slot, this triggering a series of kicks.  On success, returns the number
+// of kicks taken.  Returns -1 on with the kicked-out fingerprint in ofp.
+static inline int kickAdd(struct fpset *set, uint64_t fp, uint64_t *b, size_t i, uint64_t *ofp)
 {
-    int n = 2 * set->logsize;
-    do {
+#ifdef FPSET_MAXKICK
+    int maxk = FPSET_MAXKICK;
+#else
+    int maxk = 2 * set->logsize;
+#endif
+    for (int k = 1; k <= maxk; k++) {
 	// Put at the top, kick out from the bottom.
 	// Using *ofp as a temporary register.
 	*ofp = b[0];
@@ -214,32 +236,23 @@ static inline bool addk(struct fpset *set, uint64_t *b,
 	    i = i1, b = b1;
 	for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
 	    if (addNonLast1(fp, b, n))
-		return set->cnt++, true;
+		return set->cnt++, k;
 	if (addLast1(fp, b, i, FPSET_BUCKETSIZE-1))
-	    return set->cnt++, true;
-	// Keep trying.
-    } while (n-- >= 0);
+	    return set->cnt++, k;
+    }
     // Ran out of tries? ofp already set.
-    return false;
+    return -1;
 }
 
 int fpset_add(struct fpset *set, uint64_t fp)
 {
     dFP2IB;
-    // No dups during simulations, because of full-period LCG.
-#ifndef FPSET_PROBA
     if (has(fp, b1, b2))
 	return 0;
-#endif
-    if (addNonLast2(fp, b1, b2, 0))
+    if (justAdd(fp, b1, i1, b2, i2))
 	return set->cnt++, 1;
-    for (int n = 1; n < FPSET_BUCKETSIZE-1; n++)
-	if (addNonLast2(fp, b1, b2, n))
-	    return set->cnt++, 1;
-    if (addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1))
-	return set->cnt++, 1;
-    if (addk(set, b1, i1, fp, &fp))
-	return set->cnt++, 1;
+    if (kickAdd(set, fp, b1, i1, &fp) >= 0)
+	return 1;
     return -1;
     // TODO: rebuild the table with logsize + 1.
 }
