@@ -58,6 +58,8 @@ struct fpset {
     uint64_t *b1, *b2;		\
     FP2IB
 
+#define unlikely(cond) __builtin_expect(cond, 0)
+
 // Check if a fingerprint has already been inserted.  I trust gcc to unroll
 // the loop properly.  Note that only two memory locations are accessed
 // (which translates into only two cache lines, unless FPSET_BUCKETSIZE is 3);
@@ -70,7 +72,7 @@ static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2)
     // the probability of failure (in this case, fingerprints are different
     // and equality almost never holds).
     for (int j = 0; j < FPSET_BUCKETSIZE; j++)
-	if (fp == b1[j] || fp == b2[j])
+	if (unlikely(fp == b1[j] || fp == b2[j]))
 	    return true;
     return false;
 #else
