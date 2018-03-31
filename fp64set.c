@@ -260,9 +260,14 @@ int fpset_add(struct fpset *set, uint64_t fp)
     if (has(fp, b1, b2))
 	return 0;
 #endif
+#if FPSET_GOLEFT == 1
     ALWAYS_GO_LEFT;
+#endif
     if (addNonLast2(fp, b1, b2, 0))
 	return set->cnt++, 1;
+#if FPSET_GOLEFT == 2
+    ALWAYS_GO_LEFT;
+#endif
     for (int n = 1; n < FPSET_BUCKETSIZE-1; n++)
 	if (addNonLast2(fp, b1, b2, n))
 	    return set->cnt++, 1;
