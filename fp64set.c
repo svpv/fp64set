@@ -86,18 +86,14 @@ static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2)
 #endif
 }
 
-// Test if a fingerprint at bb[i][*] is valid (otherwise, the slot is free).
+// Test if a fingerprint at bb[i][*] is actually a free slot.
 // Note that a bucket can only keep hold of such a fingerprint that hashes
 // into the bucket.  This obviates the need for separate bookkeeping.
-static inline bool fpok(uint64_t fp, size_t i, size_t mask)
+static inline bool freeSlot(uint64_t fp, size_t i)
 {
-    size_t i1, i2;
-    FP2I(fp, mask);
-#ifdef FPSET_PROBA
-    return i == i1 || i == i2;
-#else
-    return (i == i1) | (i == i2);
-#endif
+    // Slots must be initialized to 0, except that
+    // bb[0][*] slots must be initialized to -1.
+    return fp == 0 - (i == 0);
 }
 
 // Ensure that logsize (the number of buckets) is not too big.
@@ -145,7 +141,7 @@ struct fpset *fpset_new(int logsize)
     if (!set->bb)
 	return free(set), NULL;
     for (int n = 0; n < FPSET_BUCKETSIZE; n++)
-	set->bb[0][n] = ~(uint64_t) 0;
+	set->bb[0][n] = -1;
     return set;
 }
 
@@ -158,7 +154,7 @@ void fpset_free(struct fpset *set)
     size_t cnt = 0;
     for (size_t i = 0; i <= set->mask; i++)
 	for (int n = 0; n < FPSET_BUCKETSIZE; n++)
-	    cnt += fpok(set->bb[i][n], i, set->mask);
+	    cnt += !freeSlot(set->bb[i][n], i);
     assert(set->cnt == cnt);
 #endif
     free(set->bb);
@@ -186,16 +182,16 @@ static inline bool addNonLast2(uint64_t fp, uint64_t *b1, uint64_t *b2, size_t n
     return addNonLast1(fp, b1, n) || addNonLast1(fp, b2, n);
 }
 
-static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n, size_t mask)
+static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n)
 {
-    if (!fpok(b[n], i, mask))
+    if (freeSlot(b[n], i))
 	return b[n] = fp, true;
     return false;
 }
 
-static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, size_t i2, size_t n, size_t mask)
+static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, size_t i2, size_t n)
 {
-    return addLast1(fp, b1, i1, n, mask) || addLast1(fp, b2, i2, n, mask);
+    return addLast1(fp, b1, i1, n) || addLast1(fp, b2, i2, n);
 }
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i686__))
@@ -248,7 +244,7 @@ static inline bool addk(struct fpset *set, uint64_t *b,
 	for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
 	    if (addNonLast1(fp, b, n))
 		return set->cnt++, true;
-	if (addLast1(fp, b, i, FPSET_BUCKETSIZE-1, set->mask))
+	if (addLast1(fp, b, i, FPSET_BUCKETSIZE-1))
 	    return set->cnt++, true;
 	// Keep trying.
     } while (n-- >= 0);
@@ -270,7 +266,7 @@ int fpset_add(struct fpset *set, uint64_t fp)
     for (int n = 1; n < FPSET_BUCKETSIZE-1; n++)
 	if (addNonLast2(fp, b1, b2, n))
 	    return set->cnt++, 1;
-    if (addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1, set->mask))
+    if (addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1))
 	return set->cnt++, 1;
     if (addk(set, b1, i1, fp, &fp))
 	return set->cnt++, 1;
