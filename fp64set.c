@@ -257,8 +257,11 @@ static inline bool addk(struct fpset *set, uint64_t *b,
 int fpset_add(struct fpset *set, uint64_t fp)
 {
     dFP2IB;
+    // No dups during simulations, because of full-period LCG.
+#ifndef FPSET_PROBA
     if (has(fp, b1, b2))
 	return 0;
+#endif
     ALWAYS_GO_LEFT;
     if (addNonLast2(fp, b1, b2, 0))
 	return set->cnt++, 1;
