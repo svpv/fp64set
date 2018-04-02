@@ -215,11 +215,7 @@ static inline bool justAdd(uint64_t fp, uint64_t *b1, uint64_t *b2)
 // of kicks taken.  Returns -1 on with the kicked-out fingerprint in ofp.
 static inline int kickAdd(struct fpset *set, uint64_t fp, uint64_t *b, size_t i, uint64_t *ofp)
 {
-#ifdef FPSET_MAXKICK
-    int maxk = FPSET_MAXKICK;
-#else
     int maxk = 2 * set->logsize;
-#endif
     for (int k = 1; k <= maxk; k++) {
 	// Put at the top, kick out from the bottom.
 	// Using *ofp as a temporary register.
