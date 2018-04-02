@@ -194,35 +194,6 @@ static inline bool addLast2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, 
     return addLast1(fp, b1, i1, n) || addLast1(fp, b2, i2, n);
 }
 
-#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i686__))
-#define ALWAYS_GO_LEFT			\
-    do {				\
-	size_t ix;			\
-	uint64_t *bx;			\
-	__asm__(			\
-	    "cmp %[i1],%[i2]\n\t"	\
-	    "mov %[b1],%[bx]\n\t"	\
-	    "mov %[i1],%[ix]\n\t"	\
-	    "cmovb %[b2],%[b1]\n\t"	\
-	    "cmovb %[i2],%[i1]\n\t"	\
-	    "cmovb %[bx],%[b2]\n\t"	\
-	    "cmovb %[ix],%[i2]"		\
-	    : [i1] "+r" (i1), [i2] "+r" (i2), [ix] "=rm" (ix), \
-	      [b1] "+r" (b1), [b2] "+r" (b2), [bx] "=rm" (bx)  \
-	    :: "cc");			\
-    } while (0)
-#else
-#define ALWAYS_GO_LEFT		\
-    do {			\
-	if (i1 <= i2)		\
-	    break;		\
-	size_t ix = i1;		\
-	uint64_t *bx = b1;	\
-	i1 = i2, i2 = ix;	\
-	b1 = b2, b2 = bx;	\
-    } while (0)
-#endif
-
 static inline bool addk(struct fpset *set, uint64_t *b,
 	size_t i, uint64_t fp, uint64_t *ofp)
 {
@@ -260,14 +231,8 @@ int fpset_add(struct fpset *set, uint64_t fp)
     if (has(fp, b1, b2))
 	return 0;
 #endif
-#if FPSET_GOLEFT == 1
-    ALWAYS_GO_LEFT;
-#endif
     if (addNonLast2(fp, b1, b2, 0))
 	return set->cnt++, 1;
-#if FPSET_GOLEFT == 2
-    ALWAYS_GO_LEFT;
-#endif
     for (int n = 1; n < FPSET_BUCKETSIZE-1; n++)
 	if (addNonLast2(fp, b1, b2, n))
 	    return set->cnt++, 1;
