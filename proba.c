@@ -25,24 +25,35 @@
 static inline uint64_t rotl64(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
 static inline uint64_t rotr64(uint64_t x, int r) { return (x >> r) | (x << (64 - r)); }
 
+// The PRNG state is initialized with the first outputs of splitmix64
+// seeded with zero (much like suggested in xoroshiro128plus.c).
+static uint64_t prngState = 0xe220a8397b1dcdaf;
+
+#include <string.h>
+#include <sys/auxv.h>
+
+static void randomizePrng(void)
+{
+    void *auxrnd = (void *) getauxval(AT_RANDOM);
+    assert(auxrnd);
+    memcpy(&prngState, auxrnd, sizeof prngState);
+}
+
 // A fast LCG-based PRNG, medium quality.  Just happens to be good enough
 // for the job.  Another reason for using this generator is that its state
 // is only a single 64-bit variable, and so it yields unique 64-bit numbers.
 // This makes it possible to disable dup detection during simulations.
 static inline uint64_t rnd(void)
 {
-    // The state is initialized with the first outputs of splitmix64
-    // seeded with zero (much like suggested in xoroshiro128plus.c).
-    static uint64_t x = 0xe220a8397b1dcdaf;
     // Use the previous state as the basis for the return value, to improve
     // instruction-level parallelism.  Rotate the worst 12 bits away into
     // the higher half.  Would like to rotate even more, possibly by 16 bits,
     // but need to keep at least 20 good bits in the higher half to address
     // up to 1M buckets.
-    uint64_t ret = rotr64(x, 12);
+    uint64_t ret = rotr64(prngState, 12);
     // The state is updated in parallel even as the caller makes use of "ret"
     // to index into the buckets.  Constants are Knuth's.
-    x = x * 0x5851f42d4c957f2d + 0x14057b7ef767814f;
+    prngState = prngState * 0x5851f42d4c957f2d + 0x14057b7ef767814f;
     return ret;
 }
 
