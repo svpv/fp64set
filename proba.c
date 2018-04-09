@@ -67,6 +67,15 @@ static inline int proba_add(struct fpset *set, uint64_t fp)
     return kickAdd(set, fp, b1, i1, &fp);
 }
 
+// Reset fpset structure to the initial state.
+static inline void proba_clear(struct fpset *set)
+{
+    set->cnt = 0;
+    memset(set->bb, 0, (set->mask + 1) * sizeof *set->bb);
+    for (int n = 0; n < FPSET_BUCKETSIZE; n++)
+	set->bb[0][n] = -1;
+}
+
 #include <stdio.h>
 #include "qsort.h"
 
@@ -99,6 +108,50 @@ static void fillfactor(void)
     }
 }
 
+static void failurerate(void)
+{
+    int logfix = FPSET_BUCKETSIZE > 2;
+    int maxbucket = FPSET_BUCKETSIZE == 4 ? 7 :
+		    FPSET_BUCKETSIZE == 3 ? 9 : 12;
+    for (int logsize = 4 + logfix, bucketlog = logsize - logfix;
+	     bucketlog <= maxbucket; logsize++, bucketlog++) {
+	int slots = (1 << bucketlog) * FPSET_BUCKETSIZE;
+	int failures = 0;
+	uint64_t tries = 0;
+	struct fpset *set = fpset_new(logsize);
+	do {
+	    for (int i = 0; i < (1<<20); i++) {
+		proba_clear(set);
+		int j = 0;
+		while (j < slots/2) {
+		    if (proba_add(set, rnd()) < 0) break;
+		    if (proba_add(set, rnd()) < 0) break;
+		    j += 2;
+		}
+		if (j < slots/2) {
+		    failures++;
+		    putc('.', stderr);
+		}
+		tries++;
+	    }
+	    /*
+	     * See "Estimating Bernoulli trial probability from a small sample".
+	     * The expected probability is E=(m+1)/(n+2), and 17 failures
+	     * are required for the upper bound (3) not to exceed the real
+	     * probability by a factor of more than 1.5 with 90% confidence.
+	     *
+	    > library(zipfR)
+	    > C=.90; m=17; n=17e6
+	    > Rbeta.inv((1+C)/2, m+1, n-m+1)
+	      [1] 1.499954e-06
+	     */
+	} while (failures < 17);
+	fpset_free(set);
+	putc('\n', stderr);
+	printf("%d\t%.1e\n", bucketlog, (failures + 1.0) / (tries + 2));
+    }
+}
+
 #include <getopt.h>
 
 enum {
@@ -123,6 +176,6 @@ int main(int argc, char **argv)
 	    fprintf(stderr, "Usage: %s [OPTIONS...] [ARGS...]\n", argv[0]);
 	    return 1;
 	}
-    fillfactor();
+    failurerate();
     return 0;
 }
