@@ -20,155 +20,191 @@
 
 #include <stdlib.h>
 #include <assert.h>
-#include <limits.h>
 #include <errno.h>
-#include "fpset.h"
+#include "fp64set.h"
 
-// Slots per bucket (2, 3, or 4).
-#ifndef FPSET_BUCKETSIZE
-#define FPSET_BUCKETSIZE 2
-#elif FPSET_BUCKETSIZE < 2 || FPSET_BUCKETSIZE > 4
-#error "bad FPSET_BUCKETSIZE value"
-#endif
-
-struct fpset {
-    // The total number of unique fingerprints added.
-    size_t cnt;
-    // The number of buckets, the logarithm.
-    int logsize;
+// The real fp64set structure (upconverted from "void *set").
+struct set {
+    // Virtual functions.
+    int (*add)(void *set, uint64_t fp);
+    bool (*has)(void *set, uint64_t fp);
     // The number of buckets - 1, helps indexing into the buckets.
     size_t mask;
-    // The buckets (malloc'd); each bucket has a few fingerprint slots.
-    uint64_t (*bb)[FPSET_BUCKETSIZE];
+    // The buckets (malloc'd); each bucket has bsize slots.
+    // Two-dimensional structure is emulated with pointer arithmetic.
+    uint64_t *bb;
+    // To reduce the failure rate, one or two fingerprints can be stashed.
+    // When only one fingerprint is stashed, we have stash[0] == stash[1].
+    uint64_t stash[2];
+    // The total number of unique fingerprints added to buckets,
+    // not including the stashed fingerprints.
+    size_t cnt;
+    // The number of fingerprints stashed: 0, 1, or 2.
+    int nstash;
+    // The number of buckets, the logarithm: 4..32.
+    int logsize;
+    // The number of slots in each bucket: 2, 3, or 4.
+    int bsize;
 };
 
 // Make two indexes out of a fingerprint.
 // Fingerprints are treated as two 32-bit hash values for this purpose.
+#define Hash1(fp, mask) ((fp >> 00) & mask)
+#define Hash2(fp, mask) ((fp >> 32) & mask)
 #define FP2I(fp, mask)		\
-    i1 = (fp >> 00) & mask;	\
-    i2 = (fp >> 32) & mask
+    i1 = Hash1(fp, mask);	\
+    i2 = Hash2(fp, mask)
 // Further identify the buckets.
-#define FP2IB			\
-    FP2I(fp, set->mask);	\
-    b1 = set->bb[i1];		\
-    b2 = set->bb[i2]
+#define FP2IB(fp, bb, mask)	\
+    FP2I(fp, mask);		\
+    b1 = bb + bsize * i1;	\
+    b2 = bb + bsize * i2
 // Further declare vars.
-#define dFP2IB			\
+#define dFP2IB(fp, bb, mask)	\
     size_t i1, i2;		\
     uint64_t *b1, *b2;		\
-    FP2IB
+    FP2IB(fp, bb, mask)
 
 #define unlikely(cond) __builtin_expect(cond, 0)
 
-// Check if a fingerprint has already been inserted.  I trust gcc to unroll
-// the loop properly.  Note that only two memory locations are accessed
-// (which translates into only two cache lines, unless FPSET_BUCKETSIZE is 3);
-// this is one reason why fpset_has() is 2-3 times faster than
-// std::unordered_set<uint64_t>::find().
-static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2)
+// Check if a fingerprint has already been inserted.  Note that only two memory
+// locations are accessed (which translates into only two cache lines); this is
+// one reason why fp64set_has() is 2-3 times faster than std::unordered_set<uint64_t>::find().
+// Further, I prefer to beget a completely branchless binary code, which
+// works faster with real data: although equality sometimes holds, if the CPU
+// tries to bet on when and where the equality holds, it loses.  (Branching,
+// on the other hand, might work faster if the branches are completely
+// predictable, e.g. when running Monte Carlo simulations to estimate the
+// probability of failure - in this case, fingerprints are all different and
+// equality almost never holds.  However, just in this case, it is possible
+// to use a full-period PRNG with 64-bit state and avoid the check entirely.)
+static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2,
+	bool nstash, uint64_t *stash, int bsize)
 {
-#ifdef FPSET_PROBA
-    // This works faster when running Monte Carlo simulations to estimate
-    // the probability of failure (in this case, fingerprints are different
-    // and equality almost never holds).
-    for (int j = 0; j < FPSET_BUCKETSIZE; j++)
-	if (unlikely(fp == b1[j] || fp == b2[j]))
-	    return true;
-    return false;
-#else
-    // This works faster with real data, where equality sometimes holds.
-    // However, if the CPU tries to bet on when and where equality holds,
-    // it loses.  It is best to circumvent branch prediction entirely.
-    bool has = false;
-    for (int j = 0; j < FPSET_BUCKETSIZE; j++)
-	has |= (fp == b1[j]) | (fp == b2[j]);
-    return has;
-#endif
+    // Issue loads for both buckets.
+    bool has1 = fp == b1[0];
+    bool has2 = fp == b2[0];
+    // Stashed elements can be checked in the meantime.
+    if (nstash) {
+	has1 |= fp == stash[0];
+	has2 |= fp == stash[1];
+    }
+    // Check the rest of the slots.
+    if (bsize > 1) {
+	has1 |= fp == b1[1];
+	has2 |= fp == b2[1];
+    }
+    if (bsize > 2) {
+	has1 |= fp == b1[2];
+	has2 |= fp == b2[2];
+    }
+    if (bsize > 3) {
+	has1 |= fp == b1[3];
+	has2 |= fp == b2[3];
+    }
+    return has1 | has2;
+}
+
+// Template for set->has virtual functions.
+static inline bool t_has(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+    dFP2IB(fp, set->bb, set->mask);
+    return has(fp, b1, b2, nstash, set->stash, bsize);
+}
+
+// Virtual functions for set->has, differ by the number of slots in a bucket
+// and by whether the stash is active.
+static bool has2st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 2); }
+static bool has2st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 2); }
+static bool has3st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 3); }
+static bool has3st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 3); }
+static bool has4st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 4); }
+static bool has4st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 4); }
+
+// Virtual functions for set->add, forward declaration.
+static int add2st0(void *set, uint64_t fp);
+static int add2st1(void *set, uint64_t fp);
+static int add3st0(void *set, uint64_t fp);
+static int add3st1(void *set, uint64_t fp);
+static int add4st0(void *set, uint64_t fp);
+static int add4st1(void *set, uint64_t fp);
+
+struct fp64set *fp64set_new(int logsize)
+{
+    assert(logsize >= 0);
+    if (logsize < 4)
+	logsize = 4;
+    else if (logsize > 32)
+	return errno = E2BIG, NULL;
+    else if (logsize > 31 && sizeof(size_t) < 5)
+	return errno = ENOMEM, NULL;
+
+    // Starting with two slots per bucket.
+    size_t nb = (size_t) 1 << logsize;
+    uint64_t *bb = calloc(nb, 2 * sizeof(uint64_t));
+    if (!bb)
+	return NULL;
+
+    // The blank value for bb[0][*] slots is UINT64_MAX.
+    bb[0] = bb[1] = UINT64_MAX;
+
+    struct set *set = malloc(sizeof *set);
+    if (!set)
+	return free(bb), NULL;
+
+    set->add = add2st0;
+    set->has = has2st0;
+    set->mask = nb - 1;
+    set->bb = bb;
+    set->stash[0] = set->stash[1] = 0;
+    set->cnt = 0;
+    set->nstash = 0;
+    set->logsize = logsize;
+    set->bsize = 2;
+
+    return (struct fp64set *) set;
 }
 
 // Test if a fingerprint at bb[i][*] is actually a free slot.
-// Note that a bucket can only keep hold of such a fingerprint that hashes
+// Note that a bucket can only keep hold of such fingerprints that hash
 // into the bucket.  This obviates the need for separate bookkeeping.
 static inline bool freeSlot(uint64_t fp, size_t i)
 {
     // Slots must be initialized to 0, except that
-    // bb[0][*] slots must be initialized to -1.
+    // bb[0][*] slots must be initialized to UINT64_MAX aka -1.
     return fp == 0 - (i == 0);
 }
 
-// Ensure that logsize (the number of buckets) is not too big.
-bool cklogsize(int logsize)
+void fp64set_free(struct fp64set *arg)
 {
-    if (sizeof(size_t) > 4) {
-	// The only limitation on 64-bit platforms is that we can run out
-	// of 32-bit hash values.  With FPSET_BUCKETSIZE=2, the buckets would
-	// occupy 16 bytes * 4G = 64G RAM, which currently (as of late 2017)
-	// matches maximum RAM supported by high-end desktop CPUs.
-	// Furthermore, it doesn't make much sense to build even bigger tables
-	// of 64-bit fingerprints, because, exactly at this point, birthday
-	// collisions start to take off (and so fingerprints become less useful
-	// for identifying data items).
-	return logsize <= 32;
-    }
-    // The limit is more stringent on 32-bit systems.  We only check that the
-    // buckets occupy less than 2^32 bytes (or, in other words, that the byte
-    // count would fit into size_t); malloc may further impose its own limits.
-    // If a bucket occupies 16 bytes, this reduces the 32-bit space by 4 bits;
-    // the check then goes like "logsize < 28" which translates into
-    // "your appetites be must less than 4G which is the entire address space".
-    // Thus logsize=27 limits the bucket memory by 2G for FPSET_BUCKETSIZE=2
-    // and 3G for FPSET_BUCKETSIZE=3; FPSET_BUCKETSIZE=4 needs a correction.
-    return logsize < CHAR_BIT * sizeof(size_t) - 4 - (FPSET_BUCKETSIZE > 3);
-}
-
-struct fpset *fpset_new(int logsize)
-{
-    assert(logsize >= 0);
-    // The number of fingerprints -> the number of buckets.
-    logsize -= FPSET_BUCKETSIZE > 2;
-    // TODO: tune the minimum number of buckets for some probability.
-    if (logsize < 4)
-	logsize = 4;
-    else if (!cklogsize(logsize))
-	return errno = E2BIG, NULL;
-    struct fpset *set = malloc(sizeof *set);
-    if (!set)
-	return NULL;
-    set->cnt = 0;
-    set->logsize = logsize;
-    set->mask = (size_t) 1 << logsize;
-    set->bb = calloc(set->mask--, sizeof *set->bb);
-    if (!set->bb)
-	return free(set), NULL;
-    for (int n = 0; n < FPSET_BUCKETSIZE; n++)
-	set->bb[0][n] = -1;
-    return set;
-}
-
-void fpset_free(struct fpset *set)
-{
+    struct set *set = (void *) arg;
     if (!set)
 	return;
 #ifdef DEBUG
     // The number of fingerprints must match the occupied slots.
     size_t cnt = 0;
-    for (size_t i = 0; i <= set->mask; i++)
-	for (int n = 0; n < FPSET_BUCKETSIZE; n++)
-	    cnt += !freeSlot(set->bb[i][n], i);
+    size_t mask = set->mask;
+    size_t bsize = set->bsize;
+    for (size_t i = 0; i <= mask; i++) {
+	uint64_t *b = set->bb + bsize * i;
+	for (int j = 0; j < bsize; j++) {
+	    uint64_t fp = b[j];
+	    if (freeSlot(fp, i))
+		continue;
+	    size_t i1 = Hash1(fp, mask);
+	    size_t i2 = Hash2(fp, mask);
+	    assert(i == i1 || i == i2);
+	    cnt++;
+	}
+    }
     assert(set->cnt == cnt);
 #endif
     free(set->bb);
     free(set);
 }
 
-bool fpset_has(struct fpset *set, uint64_t fp)
-{
-    dFP2IB;
-    return has(fp, b1, b2);
-}
-
 // That much one needs to know upon the first reading.
-// The reset is fpset_add() stuff.
+// The reset is fp64set_add() stuff.
 
 // When trying to add to a non-last slot in a bucket,
 // there is even a simpler way to check if that slot is occupied.
