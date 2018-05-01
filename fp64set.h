@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Alexey Tourbin
+// Copyright (c) 2017, 2018 Alexey Tourbin
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -18,9 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef FPSET_H
-#define FPSET_H
-
+#pragma once
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -29,24 +27,39 @@ extern "C" {
 #include <stdbool.h>
 #endif
 
-// Create a new set of fingerprints.  The logsize parameter specifies the
-// expected number of elements in the set (e.g. logsize = 10 for 1024).
+// Create a new set of 64-bit fingerprints.  The logsize parameter specifies
+// the expected number of elements in the set (e.g. logsize = 10 for 1024).
 // Returns NULL on malloc failure.
-struct fpset *fpset_new(int logsize);
-void fpset_free(struct fpset *set);
+struct fp64set *fp64set_new(int logsize);
+void fp64set_free(struct fp64set *set);
 
-// Add a 64-bit fingerprint to the set.  Returns -1 on malloc failure.
-// Returns 0 when the element was added smoothly.  Returns 1 when the
-// internal structure was reallocated (if this happens more than a couple
-// of times, this indicates that the logsize parameter passed to fpset_new
-// was too small).  Returns 2 if the internal structure has been switched
-// from Cuckoo filter to the ordered set of numbers.
-int fpset_add(struct fpset *set, uint64_t fp) __attribute((nonnull));
+// Exposes only a part of the structure, just enough to inline the calls.
+struct fp64set {
+    int (*add)(void *set, uint64_t fp);
+    bool (*has)(void *set, uint64_t fp);
+};
+
+// Add a 64-bit fingerprint to the set.  Returns 0 for a previously added
+// fingerprint, 1 when the new fingerprint was added smoothly; 2 if the
+// structure has been resized (when this regularly happens more than once,
+// it indicates that the initial logsize value passed to fp64set_new was too
+// small).  Returns -1 on malloc failure (ENOMEM); or the insertion can fail
+// just by chance (EAGAIN), which means that a series of evictions failed,
+// and an unrelated fingerprint has been kicked out.  Unless false negatives
+// are permitted, the only option in this case is to rebuild the set from
+// scratch, fingerprinting the data with a different seed.  The possibility
+// of this kind of failure decreases exponentially with logsize.
+static inline int fp64set_add(struct fp64set *set, uint64_t fp)
+{
+    return set->add(set, fp);
+}
 
 // Check if the fingerprint is in the set.
-bool fpset_has(struct fpset *set, uint64_t fp) __attribute((nonnull));
+static inline bool fp64set_has(struct fp64set *set, uint64_t fp)
+{
+    return set->has(set, fp);
+}
 
 #ifdef __cplusplus
 }
-#endif
 #endif
