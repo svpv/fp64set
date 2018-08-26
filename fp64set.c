@@ -19,6 +19,7 @@
 // SOFTWARE.
 
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <errno.h>
 #include "fp64set.h"
@@ -67,6 +68,9 @@ struct set {
 
 #define unlikely(cond) __builtin_expect(cond, 0)
 
+// The inline functions below rely heavily on constant propagation.
+#define inline inline __attribute__((always_inline))
+
 // Check if a fingerprint has already been inserted.  Note that only two memory
 // locations are accessed (which translates into only two cache lines); this is
 // one reason why fp64set_has() is 2-3 times faster than std::unordered_set<uint64_t>::find().
@@ -114,20 +118,20 @@ static inline bool t_has(struct set *set, uint64_t fp, bool nstash, int bsize)
 
 // Virtual functions for set->has, differ by the number of slots in a bucket
 // and by whether the stash is active.
-static bool has2st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 2); }
-static bool has2st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 2); }
-static bool has3st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 3); }
-static bool has3st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 3); }
-static bool has4st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 4); }
-static bool has4st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 4); }
+static bool fp64set_has2st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 2); }
+static bool fp64set_has2st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 2); }
+static bool fp64set_has3st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 3); }
+static bool fp64set_has3st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 3); }
+static bool fp64set_has4st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 4); }
+static bool fp64set_has4st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 4); }
 
 // Virtual functions for set->add, forward declaration.
-static int add2st0(void *set, uint64_t fp);
-static int add2st1(void *set, uint64_t fp);
-static int add3st0(void *set, uint64_t fp);
-static int add3st1(void *set, uint64_t fp);
-static int add4st0(void *set, uint64_t fp);
-static int add4st1(void *set, uint64_t fp);
+static int fp64set_add2st0(void *set, uint64_t fp);
+static int fp64set_add2st1(void *set, uint64_t fp);
+static int fp64set_add3st0(void *set, uint64_t fp);
+static int fp64set_add3st1(void *set, uint64_t fp);
+static int fp64set_add4st0(void *set, uint64_t fp);
+static int fp64set_add4st1(void *set, uint64_t fp);
 
 struct fp64set *fp64set_new(int logsize)
 {
@@ -152,8 +156,8 @@ struct fp64set *fp64set_new(int logsize)
     if (!set)
 	return free(bb), NULL;
 
-    set->add = add2st0;
-    set->has = has2st0;
+    set->add = fp64set_add2st0;
+    set->has = fp64set_has2st0;
     set->mask = nb - 1;
     set->bb = bb;
     set->stash[0] = set->stash[1] = 0;
@@ -208,85 +212,371 @@ void fp64set_free(struct fp64set *arg)
 
 // When trying to add to a non-last slot in a bucket,
 // there is even a simpler way to check if that slot is occupied.
-static inline bool addNonLast1(uint64_t fp, uint64_t *b, size_t n)
+static inline bool addNonLast1(uint64_t fp, uint64_t *b, int j)
 {
-    if (b[n] == b[n+1])
-	return b[n] = fp, true;
+    if (b[j] == b[j+1])
+	return b[j] = fp, true;
     return false;
 }
 
 // When adding to the last slot in a bucket, need to use freeSlot.
-static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, size_t n)
+static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, int j)
 {
-    if (freeSlot(b[n], i))
-	return b[n] = fp, true;
+    if (freeSlot(b[j], i))
+	return b[j] = fp, true;
     return false;
 }
 
-#define addNonLast2(fp, b1, b2, n) \
-	addNonLast1(fp, b1, n) || \
-	addNonLast1(fp, b2, n)
-#define addLast2(fp, b1, i1, b2, i2, n) \
-	addLast1(fp, b1, i1, n) || \
-	addLast1(fp, b2, i2, n)
+// Amplify for both buckets.
+#define addNonLast2(fp, b1, b2, j) \
+	addNonLast1(fp, b1, j) || \
+	addNonLast1(fp, b2, j)
+#define addLast2(fp, b1, i1, b2, i2, j) \
+	addLast1(fp, b1, i1, j) || \
+	addLast1(fp, b2, i2, j)
 
-// Try to add a fingerprint to either of its buckets.
-static inline bool justAdd(uint64_t fp, uint64_t *b1, uint64_t *b2)
+// Try to add a fingerprint to either of its buckets (part 1, non-last slots).
+static inline bool justAdd(uint64_t fp, uint64_t *b1, uint64_t *b2, int bsize)
 {
-    for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
-	if (addNonLast2(fp, b1, b2, n))
+    for (int j = 0; j < bsize-1; j++)
+	if (addNonLast2(fp, b1, b2, j))
 	    return true;
     return false;
 }
 
 // I found it's better to refactor justAdd() as a macro, otherwise
 // the code works slower (possibly because of too many arguments).
-#define justAdd(fp, b1, i1, b2, i2) \
-	justAdd(fp, b1, b2) || \
-	addLast2(fp, b1, i1, b2, i2, FPSET_BUCKETSIZE-1)
+#define justAdd(fp, b1, i1, b2, i2, bsize) \
+	justAdd(fp, b1, b2, bsize) || \
+	addLast2(fp, b1, i1, b2, i2, bsize-1)
 
 // When all slots for a fingerprint are occupied, insertion "kicks out"
-// an already existing fingerprint and tries to place it into an alternative
-// slot, this triggering a series of kicks.  On success, returns the number
-// of kicks taken.  Returns -1 on with the kicked-out fingerprint in ofp.
-static inline int kickAdd(struct fpset *set, uint64_t fp, uint64_t *b, size_t i, uint64_t *ofp)
+// an already existing fingerprint and tries to place it into the alternative
+// slot, thus triggering a series of evictions.  Returns false with the
+// kicked-out fingerprint in ofp.
+static inline bool kickAdd(uint64_t fp, uint64_t *bb, uint64_t *b, size_t i,
+	uint64_t *ofp, int logsize, size_t mask, int bsize)
 {
-    int maxk = 2 * set->logsize;
-    for (int k = 1; k <= maxk; k++) {
+    int maxkick = logsize << 1;
+    do {
 	// Put at the top, kick out from the bottom.
 	// Using *ofp as a temporary register.
 	*ofp = b[0];
-	for (int i = 0; i < FPSET_BUCKETSIZE-1; i++)
+	for (int i = 0; i < bsize-1; i++)
 	    b[i] = b[i+1];
-	b[FPSET_BUCKETSIZE-1] = fp, fp = *ofp;
+	b[bsize-1] = fp, fp = *ofp;
 	// Ponder over the fingerprint that's been kicked out.
-	dFP2IB;
 	// Find out the alternative bucket.
+	size_t i1 = Hash1(fp, mask);
 	if (i == i1)
-	    i = i2, b = b2;
+	    i = Hash2(fp, mask);
 	else
-	    i = i1, b = b1;
-	for (int n = 0; n < FPSET_BUCKETSIZE-1; n++)
-	    if (addNonLast1(fp, b, n))
-		return set->cnt++, k;
-	if (addLast1(fp, b, i, FPSET_BUCKETSIZE-1))
-	    return set->cnt++, k;
-    }
+	    i = i1;
+	b = bb + bsize * i;
+	// Insert to the alternative bucket.
+	for (int j = 0; j < bsize-1; j++)
+	    if (addNonLast1(fp, b, j))
+		return true;
+	if (addLast1(fp, b, i, bsize-1))
+	    return true;
+    } while (maxkick-- > 0);
     // Ran out of tries? ofp already set.
+    return false;
+}
+
+static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
+	int logsize, size_t mask, int bsize)
+{
+    size_t out = 0;
+    for (size_t k = 0; k < nswap; k++) {
+	uint64_t fp = swap[k];
+	dFP2IB(fp, bb, mask);
+	if (justAdd(fp, b1, i1, b2, i2, bsize))
+	    continue;
+	// A comment on random walk.
+	if (kickAdd(fp, bb, b1, i1, &fp, logsize, mask, bsize))
+	    continue;
+	swap[out++] = fp;
+    }
+    return out;
+}
+
+// Assume malloc'd chunks are aligned to 16 bytes.
+// This helps to elicit aligned SSE2 instruction.
+// On i686, malloc aligns to 16 bytes since glibc-2.26~173.
+#define A16(p) __builtin_assume_aligned(p, 16)
+
+static inline bool upsize23(struct set *set, uint64_t fp, int bsize)
+{
+    size_t nb = set->mask + 1;
+    uint64_t *bb = reallocarray(set->bb, nb, (bsize + 1) * sizeof(uint64_t));
+    if (!bb)
+	return false;
+    set->bb = bb;
+
+    if (bsize == 2) {
+	// Reinterpret as a 3-tier array.
+	//
+	//             2 3 . .   . . . .
+	//   1 2 3 4   1 3 4 .   1 2 3 4
+	//   1 2 3 4   1 2 4 .   1 2 3 4
+
+	for (size_t i = nb - 2; i; i -= 2) {
+	    uint64_t *src0 = bb + 2 * i, *src1 = src0 + 2;
+	    uint64_t *dst0 = bb + 3 * i, *dst1 = dst0 + 3;
+	    memcpy(    dst1 , A16(src1), 16); dst1[2] = 0;
+	    memcpy(A16(dst0), A16(src0), 16); dst0[2] = 0;
+	}
+
+	bb[5] = 0, bb[4] = bb[3], bb[3] = bb[2], bb[2] = -1;
+    }
+    else {
+	// Reinterpret as a 4-tier array.
+	//
+	//             2 3 4 .   . . . .
+	//   1 2 3 4   1 3 4 .   1 2 3 4
+	//   1 2 3 4   1 2 4 .   1 2 3 4
+	//   1 2 3 4   1 2 3 .   1 2 3 4
+
+	for (size_t i = nb - 2; i; i -= 2) {
+	    uint64_t *src0 = bb + 3 * i, *src1 = src0 + 3;
+	    uint64_t *dst0 = bb + 4 * i, *dst1 = dst0 + 4;
+	    dst1[2] = src1[2]; memcpy(A16(dst1),     src1 , 16); dst1[3] = 0;
+	    dst0[2] = src0[2]; memcpy(A16(dst0), A16(src0), 16); dst0[3] = 0;
+	}
+
+	bb[7] = 0, bb[6] = bb[5], bb[5] = bb[4], bb[4] = bb[3], bb[3] = -1;
+    }
+
+    // Insert fp (no kicks required).
+    size_t ix = Hash1(fp, set->mask);
+    uint64_t *b = bb + (bsize + 1) * ix;
+    if (b[0] == b[1])
+	b[0] = fp;
+    else if (b[1] == b[2])
+	b[1] = fp;
+    else if (bsize == 2 || b[2] == b[3])
+	b[2] = fp;
+    else
+	b[3] = fp;
+
+    // Try to insert the stashed elements.
+    set->nstash = insertloop(bb, 2, set->stash, set->logsize, set->mask, bsize + 1);
+    // The outcome determines which vtab functions will further be used.
+    if (set->nstash == 0) {
+	set->add = bsize == 2 ? fp64set_add3st0 : fp64set_add4st0;
+	set->has = bsize == 2 ? fp64set_has3st0 : fp64set_has4st0;
+	set->cnt += 3;
+    }
+    else {
+	set->add = bsize == 2 ? fp64set_add3st1 : fp64set_add4st1;
+	set->has = bsize == 2 ? fp64set_has3st1 : fp64set_has4st1;
+	if (set->nstash == 2)
+	    set->cnt += 2;
+	else {
+	    assert(set->nstash == 1);
+	    set->stash[1] = set->stash[0];
+	    set->cnt++;
+	}
+    }
+
+    // The data structure upconverted.
+    set->bsize = bsize + 1;
+
+    return true;
+}
+
+static inline bool upsize4(struct set *set, uint64_t fp)
+{
+    // The only point of deliberate failure:
+    // bucket size = 4, fill factor < 50%.
+    size_t nb = set->mask + 1;
+    if (set->cnt < 2 * nb)
+	return errno = EAGAIN, false;
+
+    // Realloc 4x -> 6x slots.
+    uint64_t *bb = reallocarray(set->bb, nb, 6 * sizeof(uint64_t));
+    if (!bb)
+	return false;
+    set->bb = bb;
+
+    // Swap off the 4th tier, along with fp and the stashed elements.
+    //
+    //   1 2 3 4   x x x x   swap: fp stash 1 2 3 4
+    //   1 2 3 4   1 2 3 4
+    //   1 2 3 4   1 2 3 4
+    //   1 2 3 4   1 2 3 4
+
+    uint64_t *swap = reallocarray(NULL, nb + 4, sizeof(uint64_t));
+    if (!swap)
+	return false;
+    size_t nswap = 3;
+    swap[0] = fp;
+    swap[1] = set->stash[0];
+    swap[2] = set->stash[1];
+
+#define Copy2(i, blank0, blank1)		\
+    do {					\
+	swap[nswap] = bb[i+3];			\
+	nswap      += bb[i+3] != blank0;	\
+	swap[nswap] = bb[i+7];			\
+	nswap      += bb[i+7] != blank1;	\
+    } while (0)
+
+    Copy2(0, -1, 0);
+    for (size_t i = 2; i < nb; i += 2)
+	Copy2(4*i, 0, 0);
+
+    // Reinterpret as a 3-tier array.
+    //
+    //   x x x x
+    //   1 2 3 4   1 2 3 x 4 . . .   1 2 3 4 ? . . .
+    //   1 2 3 4   1 2 x 3 4 . . .   1 2 3 4 ? . . .
+    //   1 2 3 4   1 x 2 3 4 x . .   1 2 3 4 ? ? . .
+
+    bb[3] = bb[4], bb[4] = bb[5], bb[5] = bb[6];
+    bb[6] = bb[8], bb[7] = bb[9], bb[8] = bb[10];
+    bb[9] = bb[12], bb[10] = bb[13], bb[11] = bb[14];
+
+    for (size_t i = 4; i < nb; i += 2) {
+	uint64_t *src0 = bb + 4 * i, *src1 = src0 + 4;
+	uint64_t *dst0 = bb + 3 * i, *dst1 = dst0 + 3;
+	memcpy(A16(dst0), A16(src0), 24);
+	memcpy(    dst1 , A16(src1), 24);
+    }
+
+    // Reassign elements to new slots.
+    //
+    //   1 2 3 4 . . . .   . . . 4 . . . .
+    //   1 2 3 4 . . . .   . 2 . 4 1 . 3 .
+    //   1 2 3 4 . . . .   1 2 3 4 1 2 3 .
+
+    size_t mask2 = 2 * nb - 1;
+#define HashesTo(fp, j) \
+    ((Hash1(fp, mask2) == j) | (Hash2(fp, mask2) == j))
+
+    // When spreading a row, some elements are moved,
+    // and some not.  There are eight outcomes.
+    //
+    //   0 0 0 0 1 1 1 1
+    //   0 0 1 1 0 0 1 1
+    //   0 1 0 1 0 1 0 1
+    //
+    //   0 1 2 3 4 5 6 7
+
+#define Spread(i, vblank, wblank)			\
+    do {						\
+	size_t j = i + nb;				\
+	uint64_t *v = bb + 3 * i;			\
+	uint64_t *w = bb + 3 * j;			\
+	switch (HashesTo(v[0], j) << 0 |		\
+		HashesTo(v[1], j) << 1 |		\
+		HashesTo(v[2], j) << 2) {		\
+	case 0:						\
+	    w[0] = w[1] = w[2] = wblank;		\
+	    break;					\
+	case 1:						\
+	    w[0] = v[0], w[1] = w[2] = wblank;		\
+	    v[0] = v[1], v[1] = v[2], v[2] = vblank;	\
+	    break;					\
+	case 2:						\
+	    w[0] = v[1], w[1] = w[2] = wblank;		\
+	    v[1] = v[2], v[2] = vblank;			\
+	    break;					\
+	case 3:						\
+	    w[0] = v[0], w[1] = v[1], w[2] = wblank;	\
+	    v[0] = v[2], v[1] = v[2] = vblank;		\
+	    break;					\
+	case 4:						\
+	    w[0] = v[2], w[1] = w[2] = wblank;		\
+	    v[2] = vblank;				\
+	    break;					\
+	case 5:						\
+	    w[0] = v[0], w[1] = v[2], w[2] = wblank;	\
+	    v[0] = v[1], v[1] = v[2] = vblank;		\
+	    break;					\
+	case 6:						\
+	    w[0] = v[1], w[1] = v[2], w[2] = wblank;	\
+	    v[1] = v[2] = vblank;			\
+	    break;					\
+	default:					\
+	    w[0] = v[0], w[1] = v[1], w[2] = v[2];	\
+	    v[0] = v[1] = v[2] = vblank;		\
+	}						\
+    } while (0)
+
+    Spread(0, -1, 0);
+    for (size_t i = 1; i < nb; i++)
+	Spread(i, 0, 0);
+
+    nswap = insertloop(bb, nswap, swap, set->logsize + 1, mask2, 3);
+
+    free(swap);
+
+    assert(nswap == 0);
+    assert(set->nstash == 2);
+    set->cnt += 3;
+
+    set->mask = mask2;
+    set->logsize++;
+    set->nstash = 0;
+    set->bsize = 3;
+
+    set->add = fp64set_add3st0;
+    set->has = fp64set_has3st0;
+
+    return true;
+}
+
+static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+    // No stash yet?
+    if (nstash == 0) {
+	set->nstash = 1;
+	set->stash[0] = set->stash[1] = fp;
+	// Switch vfuncs to the ones with stash.
+	if (bsize == 2)
+	    set->add = fp64set_add2st1, set->has = fp64set_has2st1;
+	else if (bsize == 3)
+	    set->add = fp64set_add3st1, set->has = fp64set_has3st1;
+	else
+	    set->add = fp64set_add4st1, set->has = fp64set_has4st1;
+	return true;
+    }
+    // Free slot in the stash?
+    if (set->nstash == 1) {
+	set->nstash = 2;
+	set->stash[1] = fp;
+	return true;
+    }
+    // The stash is full.
+    return false;
+}
+
+// Template for virtual functions.
+static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+    dFP2IB(fp, set->bb, set->mask);
+    if (has(fp, b1, b2, nstash, set->stash, bsize))
+	return 0;
+    if (justAdd(fp, b1, i1, b2, i2, bsize))
+	return set->cnt++, 1;
+    if (kickAdd(fp, set->bb, b1, i1, &fp, set->logsize, set->mask, bsize))
+	return set->cnt++, 1;
+    if (stashAdd(set, fp, nstash, bsize))
+	return 1; // stashing doesn't change set->cnt
+    if (nstash && bsize == 2 && upsize23(set, fp, 2)) return 2;
+    if (nstash && bsize == 3 && upsize23(set, fp, 3)) return 2;
+    if (nstash && bsize == 4 && upsize4 (set, fp   )) return 2;
     return -1;
 }
 
-int fpset_add(struct fpset *set, uint64_t fp)
-{
-    dFP2IB;
-    if (has(fp, b1, b2))
-	return 0;
-    if (justAdd(fp, b1, i1, b2, i2))
-	return set->cnt++, 1;
-    if (kickAdd(set, fp, b1, i1, &fp) >= 0)
-	return 1;
-    return -1;
-    // TODO: rebuild the table with logsize + 1.
-}
+// Virtual functions for set->add.
+static int fp64set_add2st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 2); }
+static int fp64set_add2st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 2); }
+static int fp64set_add3st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 3); }
+static int fp64set_add3st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 3); }
+static int fp64set_add4st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 4); }
+static int fp64set_add4st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 4); }
 
 // ex:set ts=8 sts=4 sw=4 noet:
