@@ -21,6 +21,10 @@
 #pragma once
 #include <stdint.h>
 
+#if FP64SET_BENCH
+#include <x86intrin.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #else
@@ -51,13 +55,33 @@ struct fp64set {
 // of this kind of failure decreases exponentially with logsize.
 static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 {
-    return set->add(set, fp);
+#ifdef FP64SET_BENCH
+    uint64_t t0 = __rdtsc();
+#endif
+    int ret = set->add(set, fp);
+#ifdef FP64SET_BENCH
+    extern uint64_t fp64set_bench_tadd;
+    extern uint64_t fp64set_bench_nadd;
+    fp64set_bench_tadd += __rdtsc() - t0;
+    fp64set_bench_nadd += 1;
+#endif
+    return ret;
 }
 
 // Check if the fingerprint is in the set.
 static inline bool fp64set_has(struct fp64set *set, uint64_t fp)
 {
-    return set->has(set, fp);
+#ifdef FP64SET_BENCH
+    uint64_t t0 = __rdtsc();
+#endif
+    bool ret = set->has(set, fp);
+#ifdef FP64SET_BENCH
+    extern uint64_t fp64set_bench_thas;
+    extern uint64_t fp64set_bench_nhas;
+    fp64set_bench_thas += __rdtsc() - t0;
+    fp64set_bench_nhas += 1;
+#endif
+    return ret;
 }
 
 #ifdef __cplusplus
