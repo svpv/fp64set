@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -109,10 +110,26 @@ static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2,
     return has1 | has2;
 }
 
-// A version optimized for SSE4.1, uses _mm_cmpeq_epi64.
 #if defined(__i386__) || defined(__x86_64__)
 #include <smmintrin.h>
+#endif
 
+// On 64-bit systems, assume malloc'd chunks are aligned to 16 bytes.
+// This should help to elicit aligned SSE2 instructions.
+// On i686, malloc aligns to 16 bytes since glibc-2.26~173.
+#if SIZE_MAX > UINT32_MAX || defined(__x86_64__) || \
+   (defined(__i386__) && 100*__GLIBC__+__GLIBC_MINOR__ >= 226)
+#define A16(p) __builtin_assume_aligned(p, 16)
+// The stash must be loadable with aligned read.
+static_assert(offsetof(struct set, stash) % 16 == 0, "align stash");
+#else
+#define A16(p) __builtin_assume_aligned(p, 8)
+// Disable SSE2 aligned intrinsics.
+#define _mm_load_si128 _mm_loadu_si128
+#endif
+
+// A version optimized for SSE4.1, uses _mm_cmpeq_epi64.
+#if defined(__i386__) || defined(__x86_64__)
 static inline bool has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
 	bool nstash, uint64_t *stash, int bsize)
 {
@@ -364,11 +381,6 @@ static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
     }
     return out;
 }
-
-// Assume malloc'd chunks are aligned to 16 bytes.
-// This helps to elicit aligned SSE2 instruction.
-// On i686, malloc aligns to 16 bytes since glibc-2.26~173.
-#define A16(p) __builtin_assume_aligned(p, 16)
 
 static inline bool upsize23(struct set *set, uint64_t fp, int bsize)
 {
