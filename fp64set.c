@@ -365,21 +365,28 @@ static inline bool kickAdd(uint64_t fp, uint64_t *bb, uint64_t *b, size_t i,
     return false;
 }
 
+static inline bool insert(uint64_t fp, uint64_t *bb,
+	uint64_t *ofp, int logsize, size_t mask, int bsize)
+{
+    dFP2IB(fp, bb, mask);
+    if (justAdd(fp, b1, i1, b2, i2, bsize))
+	return true;
+    // A comment on random walk.
+    if (kickAdd(fp, bb, b1, i1, ofp, logsize, mask, bsize))
+	return true;
+    return false;
+}
+
 static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
 	int logsize, size_t mask, int bsize)
 {
-    size_t out = 0;
+    size_t nout = 0;
     for (size_t k = 0; k < nswap; k++) {
 	uint64_t fp = swap[k];
-	dFP2IB(fp, bb, mask);
-	if (justAdd(fp, b1, i1, b2, i2, bsize))
-	    continue;
-	// A comment on random walk.
-	if (kickAdd(fp, bb, b1, i1, &fp, logsize, mask, bsize))
-	    continue;
-	swap[out++] = fp;
+	if (!insert(fp, bb, &fp, logsize, mask, bsize))
+	    swap[nout++] = fp;
     }
-    return out;
+    return nout;
 }
 
 static inline bool upsize23(struct set *set, uint64_t fp, int bsize)
@@ -635,9 +642,7 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
     dFP2IB(fp, set->bb, set->mask);
     if (has(fp, b1, b2, nstash, set->stash, bsize))
 	return 0;
-    if (justAdd(fp, b1, i1, b2, i2, bsize))
-	return set->cnt++, 1;
-    if (kickAdd(fp, set->bb, b1, i1, &fp, set->logsize, set->mask, bsize))
+    if (insert(fp, set->bb, &fp, set->logsize, set->mask, bsize))
 	return set->cnt++, 1;
     if (stashAdd(set, fp, nstash, bsize))
 	return 1; // stashing doesn't change set->cnt
