@@ -305,45 +305,56 @@ void fp64set_free(struct fp64set *arg)
 // That much one needs to know upon the first reading.
 // The reset is fp64set_add() stuff.
 
-// When trying to add to a non-last slot in a bucket,
-// there is even a simpler way to check if that slot is occupied.
-static inline bool addNonLast1(uint64_t fp, uint64_t *b, int j)
+// Add an element to either of its buckets, preferably to the least loaded.
+static inline bool justAdd2(uint64_t fp, uint64_t *b1, size_t i1, uint64_t *b2, size_t i2, int bsize)
 {
-    if (b[j] == b[j+1])
-	return b[j] = fp, true;
+#if defined(__i386__)
+    // Precalculate freeSlot() values, faster due to register pressure.
+    uint64_t blank1 = 0 - (i1 == 0);
+    uint64_t blank2 = 0 - (i2 == 0);
+    if (b1[0] == blank1) return b1[0] = fp, true;
+    if (b2[0] == blank2) return b2[0] = fp, true;
+    if (b1[1] == blank1) return b1[1] = fp, true;
+    if (b2[1] == blank2) return b2[1] = fp, true;
+    if (bsize > 2) if (b1[2] == blank1) return b1[2] = fp, true;
+    if (bsize > 2) if (b2[2] == blank2) return b2[2] = fp, true;
+    if (bsize > 3) if (b1[3] == blank1) return b1[3] = fp, true;
+    if (bsize > 3) if (b2[3] == blank2) return b2[3] = fp, true;
+#else
+    // Otherwise I've got one more trick up in my sleeve: after the buckets
+    // are initialized, we have b[0] == b[1], and so on.  When a fingerprint
+    // is placed into b[0], the equality breaks.  In other words, b[j] is
+    // a free slot iff b[j] == b[j+1].  This works for all but the last slot.
+    if (b1[0] == b1[1]) return b1[0] = fp, true;
+    if (b2[0] == b2[1]) return b2[0] = fp, true;
+    if (bsize > 2) if (b1[1] == b1[2]) return b1[1] = fp, true;
+    if (bsize > 2) if (b2[1] == b2[2]) return b2[1] = fp, true;
+    if (bsize > 3) if (b1[2] == b1[3]) return b1[2] = fp, true;
+    if (bsize > 3) if (b2[2] == b2[3]) return b2[2] = fp, true;
+    // When adding to the last slot in a bucket, need to use freeSlot.
+    if (freeSlot(b1[bsize-1], i1)) return b1[bsize-1] = fp, true;
+    if (freeSlot(b2[bsize-1], i2)) return b2[bsize-1] = fp, true;
+#endif
     return false;
 }
 
-// When adding to the last slot in a bucket, need to use freeSlot.
-static inline bool addLast1(uint64_t fp, uint64_t *b, size_t i, int j)
+// Add an element to one bucket (because the other is known to be full).
+static inline bool justAdd1(uint64_t fp, uint64_t *b, size_t i, int bsize)
 {
-    if (freeSlot(b[j], i))
-	return b[j] = fp, true;
+#if defined(__i386__)
+    uint64_t blank = 0 - (i == 0);
+    if (b[0] == blank) return b[0] = fp, true;
+    if (b[1] == blank) return b[1] = fp, true;
+    if (bsize > 2) if (b[2] == blank) return b[2] = fp, true;
+    if (bsize > 3) if (b[3] == blank) return b[3] = fp, true;
+#else
+    if (b[0] == b[1]) return b[0] = fp, true;
+    if (bsize > 2) if (b[1] == b[2]) return b[1] = fp, true;
+    if (bsize > 3) if (b[2] == b[3]) return b[2] = fp, true;
+    if (freeSlot(b[bsize-1], i)) return b[bsize-1] = fp, true;
+#endif
     return false;
 }
-
-// Amplify for both buckets.
-#define addNonLast2(fp, b1, b2, j) \
-	addNonLast1(fp, b1, j) || \
-	addNonLast1(fp, b2, j)
-#define addLast2(fp, b1, i1, b2, i2, j) \
-	addLast1(fp, b1, i1, j) || \
-	addLast1(fp, b2, i2, j)
-
-// Try to add a fingerprint to either of its buckets (part 1, non-last slots).
-static inline bool justAdd(uint64_t fp, uint64_t *b1, uint64_t *b2, int bsize)
-{
-    for (int j = 0; j < bsize-1; j++)
-	if (addNonLast2(fp, b1, b2, j))
-	    return true;
-    return false;
-}
-
-// I found it's better to refactor justAdd() as a macro, otherwise
-// the code works slower (possibly because of too many arguments).
-#define justAdd(fp, b1, i1, b2, i2, bsize) \
-	justAdd(fp, b1, b2, bsize) || \
-	addLast2(fp, b1, i1, b2, i2, bsize-1)
 
 // When all slots for a fingerprint are occupied, insertion "kicks out"
 // an already existing fingerprint and tries to place it into the alternative
@@ -369,10 +380,7 @@ static inline bool kickAdd(uint64_t fp, uint64_t *bb, uint64_t *b, size_t i,
 	    i = i1;
 	b = bb + bsize * i;
 	// Insert to the alternative bucket.
-	for (int j = 0; j < bsize-1; j++)
-	    if (addNonLast1(fp, b, j))
-		return true;
-	if (addLast1(fp, b, i, bsize-1))
+	if (justAdd1(fp, b, i, bsize))
 	    return true;
     } while (maxkick-- > 0);
     // Ran out of tries? ofp already set.
@@ -383,7 +391,7 @@ static inline bool insert(uint64_t fp, uint64_t *bb,
 	uint64_t *ofp, int logsize, size_t mask, int bsize)
 {
     dFP2IB(fp, bb, mask);
-    if (justAdd(fp, b1, i1, b2, i2, bsize))
+    if (justAdd2(fp, b1, i1, b2, i2, bsize))
 	return true;
     // A comment on random walk.
     if (kickAdd(fp, bb, b1, i1, ofp, logsize, mask, bsize))
