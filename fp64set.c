@@ -260,12 +260,18 @@ static inline bool freeSlot(uint64_t fp, size_t i)
     return fp == 0 - (i == 0);
 }
 
+#if FP64SET_DEBUG > 1
+#include <stdio.h>
+#include <inttypes.h>
+#include <t1ha.h>
+#endif
+
 void fp64set_free(struct fp64set *arg)
 {
     struct set *set = (void *) arg;
     if (!set)
 	return;
-#ifdef DEBUG
+#ifdef FP64SET_DEBUG
     // The number of fingerprints must match the occupied slots.
     size_t cnt = 0;
     size_t mask = set->mask;
@@ -283,6 +289,14 @@ void fp64set_free(struct fp64set *arg)
 	}
     }
     assert(set->cnt == cnt);
+#endif
+    // Hash the elements in the buckets and in the stash.
+    // Useful when you optimize the code and it runs suspiciously fast. :-)
+#if FP64SET_DEBUG > 1
+    uint64_t hash = t1ha(set->stash, sizeof set->stash, set->nstash);
+    hash = t1ha(set->bb, sizeof(uint64_t) * bsize * (mask + 1), hash);
+    fprintf(stderr, "%s logsize=%d bsize=%d nstash=%d cnt=%zu hash=%016" PRIx64 "\n",
+	    __func__, set->logsize, set->bsize, set->nstash, cnt, hash);
 #endif
     free(set->bb);
     free(set);
