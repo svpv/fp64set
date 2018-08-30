@@ -60,10 +60,10 @@ static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 #endif
     int ret = set->add(set, fp);
 #ifdef FP64SET_BENCH
-    extern uint64_t fp64set_bench_tadd;
-    extern uint64_t fp64set_bench_nadd;
-    fp64set_bench_tadd += __rdtsc() - t0;
-    fp64set_bench_nadd += 1;
+    extern uint64_t fp64set_bench_tadd[4];
+    extern uint64_t fp64set_bench_nadd[4];
+    fp64set_bench_tadd[ret & 3] += __rdtsc() - t0;
+    fp64set_bench_nadd[ret & 3] += 1;
 #endif
     return ret;
 }
