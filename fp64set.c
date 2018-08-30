@@ -411,51 +411,63 @@ static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
     return nout;
 }
 
-static inline bool upsize23(struct set *set, uint64_t fp, int bsize)
+static inline uint64_t *reinterp23(uint64_t *bb, size_t nb)
 {
-    size_t nb = set->mask + 1;
-    uint64_t *bb = reallocarray(set->bb, nb, (bsize + 1) * sizeof(uint64_t));
+    bb = reallocarray(bb, nb, 3 * sizeof(uint64_t));
+    if (!bb)
+	return NULL;
+
+    // Reinterpret as a 3-tier array.
+    //
+    //             2 3 . .   . . . .
+    //   1 2 3 4   1 3 4 .   1 2 3 4
+    //   1 2 3 4   1 2 4 .   1 2 3 4
+
+    for (size_t i = nb - 2; i; i -= 2) {
+	uint64_t *src0 = bb + 2 * i, *src1 = src0 + 2;
+	uint64_t *dst0 = bb + 3 * i, *dst1 = dst0 + 3;
+	memcpy(    dst1 , A16(src1), 16); dst1[2] = 0;
+	memcpy(A16(dst0), A16(src0), 16); dst0[2] = 0;
+    }
+    bb[5] = 0, bb[4] = bb[3], bb[3] = bb[2], bb[2] = -1;
+    return bb;
+}
+
+static inline uint64_t *reinterp34(uint64_t *bb, size_t nb)
+{
+    bb = reallocarray(bb, nb, 4 * sizeof(uint64_t));
+    if (!bb)
+	return NULL;
+
+    // Reinterpret as a 4-tier array.
+    //
+    //             2 3 4 .   . . . .
+    //   1 2 3 4   1 3 4 .   1 2 3 4
+    //   1 2 3 4   1 2 4 .   1 2 3 4
+    //   1 2 3 4   1 2 3 .   1 2 3 4
+
+    for (size_t i = nb - 2; i; i -= 2) {
+	uint64_t *src0 = bb + 3 * i, *src1 = src0 + 3;
+	uint64_t *dst0 = bb + 4 * i, *dst1 = dst0 + 4;
+	dst1[2] = src1[2]; memcpy(A16(dst1),     src1 , 16); dst1[3] = 0;
+	dst0[2] = src0[2]; memcpy(A16(dst0), A16(src0), 16); dst0[3] = 0;
+    }
+    bb[7] = 0, bb[6] = bb[5], bb[5] = bb[4], bb[4] = bb[3], bb[3] = -1;
+    return bb;
+}
+
+static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
+{
+    uint64_t *bb = bsize == 2 ?
+	    reinterp23(set->bb, set->mask + 1) :
+	    reinterp34(set->bb, set->mask + 1) ;
     if (!bb)
 	return false;
     set->bb = bb;
 
-    if (bsize == 2) {
-	// Reinterpret as a 3-tier array.
-	//
-	//             2 3 . .   . . . .
-	//   1 2 3 4   1 3 4 .   1 2 3 4
-	//   1 2 3 4   1 2 4 .   1 2 3 4
-
-	for (size_t i = nb - 2; i; i -= 2) {
-	    uint64_t *src0 = bb + 2 * i, *src1 = src0 + 2;
-	    uint64_t *dst0 = bb + 3 * i, *dst1 = dst0 + 3;
-	    memcpy(    dst1 , A16(src1), 16); dst1[2] = 0;
-	    memcpy(A16(dst0), A16(src0), 16); dst0[2] = 0;
-	}
-
-	bb[5] = 0, bb[4] = bb[3], bb[3] = bb[2], bb[2] = -1;
-    }
-    else {
-	// Reinterpret as a 4-tier array.
-	//
-	//             2 3 4 .   . . . .
-	//   1 2 3 4   1 3 4 .   1 2 3 4
-	//   1 2 3 4   1 2 4 .   1 2 3 4
-	//   1 2 3 4   1 2 3 .   1 2 3 4
-
-	for (size_t i = nb - 2; i; i -= 2) {
-	    uint64_t *src0 = bb + 3 * i, *src1 = src0 + 3;
-	    uint64_t *dst0 = bb + 4 * i, *dst1 = dst0 + 4;
-	    dst1[2] = src1[2]; memcpy(A16(dst1),     src1 , 16); dst1[3] = 0;
-	    dst0[2] = src0[2]; memcpy(A16(dst0), A16(src0), 16); dst0[3] = 0;
-	}
-
-	bb[7] = 0, bb[6] = bb[5], bb[5] = bb[4], bb[4] = bb[3], bb[3] = -1;
-    }
-
     // Insert fp (no kicks required).
-    size_t ix = Hash1(fp, set->mask);
-    uint64_t *b = bb + (bsize + 1) * ix;
+    size_t i = Hash1(fp, set->mask);
+    uint64_t *b = bb + (bsize + 1) * i;
     if (b[0] == b[1])
 	b[0] = fp;
     else if (b[1] == b[2])
@@ -487,50 +499,17 @@ static inline bool upsize23(struct set *set, uint64_t fp, int bsize)
 
     // The data structure upconverted.
     set->bsize = bsize + 1;
-
     return true;
 }
 
-static inline bool upsize4(struct set *set, uint64_t fp)
+static bool fp64set_resize23(struct set *set, uint64_t fp) { return t_resize(set, fp, 2); }
+static bool fp64set_resize34(struct set *set, uint64_t fp) { return t_resize(set, fp, 3); }
+
+static inline uint64_t *reinterp43(uint64_t *bb, size_t nb)
 {
-    // The only point of deliberate failure:
-    // bucket size = 4, fill factor < 50%.
-    size_t nb = set->mask + 1;
-    if (set->cnt < 2 * nb)
-	return errno = EAGAIN, false;
-
-    // Realloc 4x -> 6x slots.
-    uint64_t *bb = reallocarray(set->bb, nb, 6 * sizeof(uint64_t));
+    bb = reallocarray(bb, nb, 6 * sizeof(uint64_t));
     if (!bb)
-	return false;
-    set->bb = bb;
-
-    // Swap off the 4th tier, along with fp and the stashed elements.
-    //
-    //   1 2 3 4   x x x x   swap: fp stash 1 2 3 4
-    //   1 2 3 4   1 2 3 4
-    //   1 2 3 4   1 2 3 4
-    //   1 2 3 4   1 2 3 4
-
-    uint64_t *swap = reallocarray(NULL, nb + 4, sizeof(uint64_t));
-    if (!swap)
-	return false;
-    size_t nswap = 3;
-    swap[0] = fp;
-    swap[1] = set->stash[0];
-    swap[2] = set->stash[1];
-
-#define Copy2(i, blank0, blank1)		\
-    do {					\
-	swap[nswap] = bb[i+3];			\
-	nswap      += bb[i+3] != blank0;	\
-	swap[nswap] = bb[i+7];			\
-	nswap      += bb[i+7] != blank1;	\
-    } while (0)
-
-    Copy2(0, -1, 0);
-    for (size_t i = 2; i < nb; i += 2)
-	Copy2(4*i, 0, 0);
+	return NULL;
 
     // Reinterpret as a 3-tier array.
     //
@@ -613,7 +592,53 @@ static inline bool upsize4(struct set *set, uint64_t fp)
     Spread(0, -1, 0);
     for (size_t i = 1; i < nb; i++)
 	Spread(i, 0, 0);
+    return bb;
+}
 
+static bool fp64set_resize43(struct set *set, uint64_t fp)
+{
+    // The only point of deliberate failure:
+    // bucket size = 4, fill factor < 50%.
+    size_t nb = set->mask + 1;
+    if (set->cnt < 2 * nb)
+	return errno = EAGAIN, false;
+
+    uint64_t *swap = reallocarray(NULL, nb + 4, sizeof(uint64_t));
+    if (!swap)
+	return false;
+    size_t nswap = 3;
+    swap[0] = fp;
+    swap[1] = set->stash[0];
+    swap[2] = set->stash[1];
+
+    // Swap off the 4th tier, along with fp and the stashed elements.
+    //
+    //   1 2 3 4   x x x x   swap: fp stash 1 2 3 4
+    //   1 2 3 4   1 2 3 4
+    //   1 2 3 4   1 2 3 4
+    //   1 2 3 4   1 2 3 4
+
+    uint64_t *bb = set->bb;
+#define Copy2(i, blank0, blank1)		\
+    do {					\
+	swap[nswap] = bb[i+3];			\
+	nswap      += bb[i+3] != blank0;	\
+	swap[nswap] = bb[i+7];			\
+	nswap      += bb[i+7] != blank1;	\
+    } while (0)
+
+    Copy2(0, -1, 0);
+    for (size_t i = 2; i < nb; i += 2)
+	Copy2(4*i, 0, 0);
+
+    bb = reinterp43(bb, nb);
+    if (!bb) {
+	free(swap);
+	return false;
+    }
+    set->bb = bb;
+
+    size_t mask2 = 2 * nb - 1;
     nswap = insertloop(bb, nswap, swap, set->logsize + 1, mask2, 3);
 
     free(swap);
@@ -668,9 +693,9 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
 	return set->cnt++, 1;
     if (stashAdd(set, fp, nstash, bsize))
 	return 1; // stashing doesn't change set->cnt
-    if (nstash && bsize == 2 && upsize23(set, fp, 2)) return 2;
-    if (nstash && bsize == 3 && upsize23(set, fp, 3)) return 2;
-    if (nstash && bsize == 4 && upsize4 (set, fp   )) return 2;
+    if (nstash && bsize == 2 && fp64set_resize23(set, fp)) return 2;
+    if (nstash && bsize == 3 && fp64set_resize34(set, fp)) return 2;
+    if (nstash && bsize == 4 && fp64set_resize43(set, fp)) return 2;
     return -1;
 }
 
