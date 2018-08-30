@@ -110,8 +110,19 @@ static inline bool has(uint64_t fp, uint64_t *b1, uint64_t *b2,
     return has1 | has2;
 }
 
-#if defined(__i386__) || defined(__x86_64__)
+// With older compilers, pass -DFP64SET_SSE4=0.
+#ifndef FP64SET_SSE4
+#if defined(__i386__) || defined(__x86_64__) || \
+    defined(__SSE4_1__) || defined(__AVX__)
+#define FP64SET_SSE4 1
+#else
+#define FP64SET_SSE4 0
+#endif
+#endif
+
+#if FP64SET_SSE4
 #include <smmintrin.h>
+#define SSE4_FUNC __attribute__((target("sse4.1")))
 #endif
 
 // On 64-bit systems, assume malloc'd chunks are aligned to 16 bytes.
@@ -129,8 +140,8 @@ static_assert(offsetof(struct set, stash) % 16 == 0, "align stash");
 #endif
 
 // A version optimized for SSE4.1, uses _mm_cmpeq_epi64.
-#if defined(__i386__) || defined(__x86_64__)
-static inline bool has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
+#if FP64SET_SSE4
+static inline SSE4_FUNC bool has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
 	bool nstash, uint64_t *stash, int bsize)
 {
     __m128i xmm0 = _mm_set1_epi64x(fp);
@@ -197,22 +208,56 @@ static inline bool t_has(struct set *set, uint64_t fp, bool nstash, int bsize)
     return has(fp, b1, b2, nstash, set->stash, bsize);
 }
 
-// Virtual functions for set->has, differ by the number of slots in a bucket
-// and by whether the stash is active.
-static bool fp64set_has2st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 2); }
-static bool fp64set_has2st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 2); }
-static bool fp64set_has3st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 3); }
-static bool fp64set_has3st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 3); }
-static bool fp64set_has4st0(void *set, uint64_t fp) { return t_has(set, fp, 0, 4); }
-static bool fp64set_has4st1(void *set, uint64_t fp) { return t_has(set, fp, 1, 4); }
+#if FP64SET_SSE4
+static inline SSE4_FUNC bool t_has_sse4(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+    dFP2IB(fp, set->bb, set->mask);
+    return has_sse4(fp, b1, b2, nstash, set->stash, bsize);
+}
+#endif
 
-// Virtual functions for set->add, forward declaration.
-static int fp64set_add2st0(void *set, uint64_t fp);
-static int fp64set_add2st1(void *set, uint64_t fp);
-static int fp64set_add3st0(void *set, uint64_t fp);
-static int fp64set_add3st1(void *set, uint64_t fp);
-static int fp64set_add4st0(void *set, uint64_t fp);
-static int fp64set_add4st1(void *set, uint64_t fp);
+// Instantiate generic functions, only prototypes for now.
+#define MakeVFuncs(NB, ST)					 \
+    static int  fp64set_add##NB##st##ST(void *set, uint64_t fp); \
+    static bool fp64set_has##NB##st##ST(void *set, uint64_t fp);
+#define MakeAllVFuncs	\
+    MakeVFuncs(2, 0)	\
+    MakeVFuncs(2, 1)	\
+    MakeVFuncs(3, 0)	\
+    MakeVFuncs(3, 1)	\
+    MakeVFuncs(4, 0)	\
+    MakeVFuncs(4, 1)
+MakeAllVFuncs
+
+// Instantiate sse4 functions, only prototypes for now.
+#if FP64SET_SSE4
+#undef MakeVFuncs
+#define MakeVFuncs(NB, ST)							 \
+    static int  fp64set_add##NB##st##ST##sse4(void *set, uint64_t fp) SSE4_FUNC; \
+    static bool fp64set_has##NB##st##ST##sse4(void *set, uint64_t fp) SSE4_FUNC;
+MakeAllVFuncs
+#endif
+
+// How to initialize vtab slots.
+#if FP64SET_SSE4
+#define SetVFuncs(set, NB, ST, SSE4)			\
+do {							\
+    if (SSE4) {						\
+	set->add = fp64set_add##NB##st##ST##sse4;	\
+	set->has = fp64set_has##NB##st##ST##sse4;	\
+    }							\
+    else {						\
+	set->add = fp64set_add##NB##st##ST;		\
+	set->has = fp64set_has##NB##st##ST;		\
+    }							\
+} while (0)
+#else
+#define SetVFuncs(set, NB, ST, SSE4)			\
+do {							\
+    set->add = fp64set_add##NB##st##ST;			\
+    set->has = fp64set_has##NB##st##ST;			\
+} while (0)
+#endif
 
 struct fp64set *fp64set_new(int logsize)
 {
@@ -237,8 +282,12 @@ struct fp64set *fp64set_new(int logsize)
     if (!set)
 	return free(bb), NULL;
 
-    set->add = fp64set_add2st0;
-    set->has = fp64set_has2st0;
+    bool sse4 = false;
+#if FP64SET_SSE4
+    sse4 = __builtin_cpu_supports("sse4.1");
+#endif
+    SetVFuncs(set, 2, 0, sse4);
+
     set->mask = nb - 1;
     set->bb = bb;
     set->stash[0] = set->stash[1] = 0;
@@ -456,7 +505,7 @@ static inline uint64_t *reinterp34(uint64_t *bb, size_t nb)
     return bb;
 }
 
-static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
+static inline bool t_resize(struct set *set, uint64_t fp, int bsize, bool sse4)
 {
     uint64_t *bb = bsize == 2 ?
 	    reinterp23(set->bb, set->mask + 1) :
@@ -481,13 +530,17 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
     set->nstash = insertloop(bb, 2, set->stash, set->logsize, set->mask, bsize + 1);
     // The outcome determines which vtab functions will further be used.
     if (set->nstash == 0) {
-	set->add = bsize == 2 ? fp64set_add3st0 : fp64set_add4st0;
-	set->has = bsize == 2 ? fp64set_has3st0 : fp64set_has4st0;
+	if (bsize == 2)
+	    SetVFuncs(set, 3, 0, sse4);
+	else
+	    SetVFuncs(set, 4, 0, sse4);
 	set->cnt += 3;
     }
     else {
-	set->add = bsize == 2 ? fp64set_add3st1 : fp64set_add4st1;
-	set->has = bsize == 2 ? fp64set_has3st1 : fp64set_has4st1;
+	if (bsize == 2)
+	    SetVFuncs(set, 3, 1, sse4);
+	else
+	    SetVFuncs(set, 4, 1, sse4);
 	if (set->nstash == 2)
 	    set->cnt += 2;
 	else {
@@ -502,8 +555,8 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
     return true;
 }
 
-static bool fp64set_resize23(struct set *set, uint64_t fp) { return t_resize(set, fp, 2); }
-static bool fp64set_resize34(struct set *set, uint64_t fp) { return t_resize(set, fp, 3); }
+static bool fp64set_resize23(struct set *set, uint64_t fp, bool sse4) { return t_resize(set, fp, 2, sse4); }
+static bool fp64set_resize34(struct set *set, uint64_t fp, bool sse4) { return t_resize(set, fp, 3, sse4); }
 
 static inline uint64_t *reinterp43(uint64_t *bb, size_t nb)
 {
@@ -595,7 +648,7 @@ static inline uint64_t *reinterp43(uint64_t *bb, size_t nb)
     return bb;
 }
 
-static bool fp64set_resize43(struct set *set, uint64_t fp)
+static bool fp64set_resize43(struct set *set, uint64_t fp, bool sse4)
 {
     // The only point of deliberate failure:
     // bucket size = 4, fill factor < 50%.
@@ -652,13 +705,12 @@ static bool fp64set_resize43(struct set *set, uint64_t fp)
     set->nstash = 0;
     set->bsize = 3;
 
-    set->add = fp64set_add3st0;
-    set->has = fp64set_has3st0;
+    SetVFuncs(set, 3, 0, sse4);
 
     return true;
 }
 
-static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize)
+static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize, bool sse4)
 {
     // No stash yet?
     if (nstash == 0) {
@@ -666,11 +718,11 @@ static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize
 	set->stash[0] = set->stash[1] = fp;
 	// Switch vfuncs to the ones with stash.
 	if (bsize == 2)
-	    set->add = fp64set_add2st1, set->has = fp64set_has2st1;
+	    SetVFuncs(set, 2, 1, sse4);
 	else if (bsize == 3)
-	    set->add = fp64set_add3st1, set->has = fp64set_has3st1;
+	    SetVFuncs(set, 3, 1, sse4);
 	else
-	    set->add = fp64set_add4st1, set->has = fp64set_has4st1;
+	    SetVFuncs(set, 4, 1, sse4);
 	return true;
     }
     // Free slot in the stash?
@@ -691,21 +743,51 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
 	return 0;
     if (insert(fp, set->bb, &fp, set->logsize, set->mask, bsize))
 	return set->cnt++, 1;
-    if (stashAdd(set, fp, nstash, bsize))
+    bool sse4 = false;
+    if (stashAdd(set, fp, nstash, bsize, sse4))
 	return 1; // stashing doesn't change set->cnt
-    if (nstash && bsize == 2 && fp64set_resize23(set, fp)) return 2;
-    if (nstash && bsize == 3 && fp64set_resize34(set, fp)) return 2;
-    if (nstash && bsize == 4 && fp64set_resize43(set, fp)) return 2;
+    if (nstash && bsize == 2 && fp64set_resize23(set, fp, sse4)) return 2;
+    if (nstash && bsize == 3 && fp64set_resize34(set, fp, sse4)) return 2;
+    if (nstash && bsize == 4 && fp64set_resize43(set, fp, sse4)) return 2;
     return -1;
 }
 
-// Virtual functions for set->add.
-static int fp64set_add2st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 2); }
-static int fp64set_add2st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 2); }
-static int fp64set_add3st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 3); }
-static int fp64set_add3st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 3); }
-static int fp64set_add4st0(void *set, uint64_t fp) { return t_add(set, fp, 0, 4); }
-static int fp64set_add4st1(void *set, uint64_t fp) { return t_add(set, fp, 1, 4); }
+#if FP64SET_SSE4
+static inline SSE4_FUNC int t_add_sse4(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+    dFP2IB(fp, set->bb, set->mask);
+    if (has_sse4(fp, b1, b2, nstash, set->stash, bsize))
+	return 0;
+    if (insert(fp, set->bb, &fp, set->logsize, set->mask, bsize))
+	return set->cnt++, 1;
+    bool sse4 = true;
+    if (stashAdd(set, fp, nstash, bsize, sse4))
+	return 1;
+    if (nstash && bsize == 2 && fp64set_resize23(set, fp, sse4)) return 2;
+    if (nstash && bsize == 3 && fp64set_resize34(set, fp, sse4)) return 2;
+    if (nstash && bsize == 4 && fp64set_resize43(set, fp, sse4)) return 2;
+    return -1;
+}
+#endif
+
+// Finally define virtual functions.
+#undef MakeVFuncs
+#define MakeVFuncs(NB, ST)						\
+    static bool fp64set_has##NB##st##ST(void *set, uint64_t fp)		\
+    { return t_has(set, fp, ST, NB); }					\
+    static int  fp64set_add##NB##st##ST(void *set, uint64_t fp)		\
+    { return t_add(set, fp, ST, NB); }
+MakeAllVFuncs
+
+#if FP64SET_SSE4
+#undef MakeVFuncs
+#define MakeVFuncs(NB, ST)						\
+    static bool fp64set_has##NB##st##ST##sse4(void *set, uint64_t fp)	\
+    { return t_has_sse4(set, fp, ST, NB); }				\
+    static int  fp64set_add##NB##st##ST##sse4(void *set, uint64_t fp)	\
+    { return t_add_sse4(set, fp, ST, NB); }
+MakeAllVFuncs
+#endif
 
 #ifdef FP64SET_BENCH
 #include <stdio.h>
