@@ -789,27 +789,4 @@ MakeAllVFuncs
 MakeAllVFuncs
 #endif
 
-#ifdef FP64SET_BENCH
-#include <stdio.h>
-#include <inttypes.h>
-
-uint64_t fp64set_bench_tadd[4];
-uint64_t fp64set_bench_nadd[4];
-uint64_t fp64set_bench_thas;
-uint64_t fp64set_bench_nhas;
-
-static __attribute__((destructor)) void fp64set_bench_stats(void)
-{
-    for (int i = 0; i < 4; i++) {
-	if (!fp64set_bench_nadd[i])
-	    continue;
-	fprintf(stderr, "fp64set_add[%d] %.1f x %" PRIu64 "\n", i,
-		fp64set_bench_tadd[i] / (double) fp64set_bench_nadd[i], fp64set_bench_nadd[i]);
-    }
-    if (fp64set_bench_nhas)
-	fprintf(stderr, "fp64set_has %.1f x %" PRIu64 "\n",
-		fp64set_bench_thas / (double) fp64set_bench_nhas, fp64set_bench_nhas);
-}
-#endif
-
 // ex:set ts=8 sts=4 sw=4 noet:
