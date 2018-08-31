@@ -40,7 +40,7 @@ void fp64set_free(struct fp64set *set);
 // Exposes only a part of the structure, just enough to inline the calls.
 struct fp64set {
     int (*add)(void *set, uint64_t fp);
-    bool (*has)(void *set, uint64_t fp);
+    int (*has)(void *set, uint64_t fp); // returns int, let the caller booleanize
 };
 
 // Add a 64-bit fingerprint to the set.  Returns 0 for a previously added
