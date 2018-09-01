@@ -144,11 +144,11 @@ static_assert(offsetof(struct set, stash) % 16 == 0, "align stash");
 static inline SSE4_FUNC int has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
 	bool nstash, uint64_t *stash, int bsize)
 {
-    __m128i xmm0 = _mm_set1_epi64x(fp);
     __m128i xmm9;
     if (bsize == 3) {
 	__m128i xmm1 = _mm_loadu_si128((__m128i *) b1);
 	__m128i xmm2 = _mm_loadu_si128((__m128i *) b2);
+	__m128i xmm0 = _mm_set1_epi64x(fp);
 	__m128i xmm3 = _mm_set_epi64x(b1[2], b2[2]);
 	if (nstash)
 	    xmm9 = _mm_load_si128((__m128i *) stash);
@@ -168,6 +168,7 @@ static inline SSE4_FUNC int has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
     }
     __m128i xmm1 = _mm_load_si128((__m128i *) b1);
     __m128i xmm2 = _mm_load_si128((__m128i *) b2);
+    __m128i xmm0 = _mm_set1_epi64x(fp);
     if (nstash)
 	xmm9 = _mm_load_si128((__m128i *) stash);
     if (bsize == 2) {
