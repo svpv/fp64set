@@ -33,10 +33,18 @@ extern "C" {
 struct fp64set *fp64set_new(int logsize);
 void fp64set_free(struct fp64set *set);
 
+#ifdef __i386__
+#define FP64SET_FASTCALL __attribute__((regparm(3)))
+#else
+#define FP64SET_FASTCALL
+#endif
+
 // Exposes only a part of the structure, just enough to inline the calls.
 struct fp64set {
-    int (*add)(void *set, uint64_t fp);
-    int (*has)(void *set, uint64_t fp); // returns int, let the caller booleanize
+    // Pass fp first, eax:edx may hold hash() return value.
+    int (*add)(uint64_t fp, void *set) FP64SET_FASTCALL;
+    // Returns int, let the caller booleanize (can be optimized out).
+    int (*has)(uint64_t fp, const void *set) FP64SET_FASTCALL;
 };
 
 // Add a 64-bit fingerprint to the set.  Returns 0 for a previously added
@@ -51,13 +59,13 @@ struct fp64set {
 // of this kind of failure decreases exponentially with logsize.
 static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 {
-    return set->add(set, fp);
+    return set->add(fp, set);
 }
 
 // Check if the fingerprint is in the set.
-static inline bool fp64set_has(struct fp64set *set, uint64_t fp)
+static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
-    return set->has(set, fp);
+    return set->has(fp, set);
 }
 
 #ifdef __cplusplus

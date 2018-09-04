@@ -28,8 +28,8 @@
 // The real fp64set structure (upconverted from "void *set").
 struct set {
     // Virtual functions.
-    int (*add)(void *set, uint64_t fp);
-    int (*has)(void *set, uint64_t fp);
+    int (*add)(uint64_t fp, void *set) FP64SET_FASTCALL;
+    int (*has)(uint64_t fp, void *set) FP64SET_FASTCALL;
     // The number of buckets - 1, helps indexing into the buckets.
     size_t mask;
     // The buckets (malloc'd); each bucket has bsize slots.
@@ -218,9 +218,12 @@ static inline SSE4_FUNC int t_has_sse4(struct set *set, uint64_t fp, bool nstash
 #endif
 
 // Instantiate generic functions, only prototypes for now.
-#define MakeVFuncs(NB, ST)					\
-    static int fp64set_add##NB##st##ST(void *set, uint64_t fp); \
-    static int fp64set_has##NB##st##ST(void *set, uint64_t fp);
+#define VFUNC(NAME) \
+    static FP64SET_FASTCALL \
+    int fp64set_##NAME(uint64_t fp, void *set)
+#define MakeVFuncs(NB, ST)  \
+    VFUNC(add##NB##st##ST); \
+    VFUNC(has##NB##st##ST);
 #define MakeAllVFuncs	\
     MakeVFuncs(2, 0)	\
     MakeVFuncs(2, 1)	\
@@ -233,9 +236,9 @@ MakeAllVFuncs
 // Instantiate sse4 functions, only prototypes for now.
 #if FP64SET_SSE4
 #undef MakeVFuncs
-#define MakeVFuncs(NB, ST)							\
-    static int fp64set_add##NB##st##ST##sse4(void *set, uint64_t fp) SSE4_FUNC; \
-    static int fp64set_has##NB##st##ST##sse4(void *set, uint64_t fp) SSE4_FUNC;
+#define MakeVFuncs(NB, ST)		    \
+    VFUNC(add##NB##st##ST##sse4) SSE4_FUNC; \
+    VFUNC(has##NB##st##ST##sse4) SSE4_FUNC;
 MakeAllVFuncs
 #endif
 
@@ -768,22 +771,17 @@ static inline SSE4_FUNC int t_add_sse4(struct set *set, uint64_t fp, bool nstash
 }
 #endif
 
-// Finally define virtual functions.
 #undef MakeVFuncs
-#define MakeVFuncs(NB, ST)						\
-    static int fp64set_has##NB##st##ST(void *set, uint64_t fp)		\
-    { return t_has(set, fp, ST, NB); }					\
-    static int fp64set_add##NB##st##ST(void *set, uint64_t fp)		\
-    { return t_add(set, fp, ST, NB); }
+#define MakeVFuncs(NB, ST)				      \
+    VFUNC(has##NB##st##ST) { return t_has(set, fp, ST, NB); } \
+    VFUNC(add##NB##st##ST) { return t_add(set, fp, ST, NB); }
 MakeAllVFuncs
 
 #if FP64SET_SSE4
 #undef MakeVFuncs
-#define MakeVFuncs(NB, ST)						\
-    static int fp64set_has##NB##st##ST##sse4(void *set, uint64_t fp)	\
-    { return t_has_sse4(set, fp, ST, NB); }				\
-    static int fp64set_add##NB##st##ST##sse4(void *set, uint64_t fp)	\
-    { return t_add_sse4(set, fp, ST, NB); }
+#define MakeVFuncs(NB, ST)						 \
+    VFUNC(has##NB##st##ST##sse4) { return t_has_sse4(set, fp, ST, NB); } \
+    VFUNC(add##NB##st##ST##sse4) { return t_add_sse4(set, fp, ST, NB); }
 MakeAllVFuncs
 #endif
 
