@@ -437,26 +437,18 @@ static inline bool kickAdd(uint64_t fp, uint64_t *bb, uint64_t *b, size_t i,
     return false;
 }
 
-static inline bool insert(uint64_t fp, uint64_t *bb,
-	uint64_t *ofp, int logsize, size_t mask, int bsize)
-{
-    dFP2IB(fp, bb, mask);
-    if (justAdd2(fp, b1, i1, b2, i2, bsize))
-	return true;
-    // A comment on random walk.
-    if (kickAdd(fp, bb, b1, i1, ofp, logsize, mask, bsize))
-	return true;
-    return false;
-}
-
 static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
 	int logsize, size_t mask, int bsize)
 {
     size_t nout = 0;
     for (size_t k = 0; k < nswap; k++) {
 	uint64_t fp = swap[k];
-	if (!insert(fp, bb, &fp, logsize, mask, bsize))
-	    swap[nout++] = fp;
+	dFP2IB(fp, bb, mask);
+	if (justAdd2(fp, b1, i1, b2, i2, bsize))
+	    continue;
+	if (kickAdd(fp, bb, b1, i1, &fp, logsize, mask, bsize))
+	    continue;
+	swap[nout++] = fp;
     }
     return nout;
 }
@@ -742,7 +734,10 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
     dFP2IB(fp, set->bb, set->mask);
     if (has(fp, b1, b2, nstash, set->stash, bsize))
 	return 0;
-    if (insert(fp, set->bb, &fp, set->logsize, set->mask, bsize))
+    if (justAdd2(fp, b1, i1, b2, i2, bsize))
+	return set->cnt++, 1;
+    // A comment on random walk.
+    if (kickAdd(fp, set->bb, b1, i1, &fp, set->logsize, set->mask, bsize))
 	return set->cnt++, 1;
     bool sse4 = false;
     if (stashAdd(set, fp, nstash, bsize, sse4))
@@ -759,7 +754,9 @@ static inline SSE4_FUNC int t_add_sse4(struct set *set, uint64_t fp, bool nstash
     dFP2IB(fp, set->bb, set->mask);
     if (has_sse4(fp, b1, b2, nstash, set->stash, bsize))
 	return 0;
-    if (insert(fp, set->bb, &fp, set->logsize, set->mask, bsize))
+    if (justAdd2(fp, b1, i1, b2, i2, bsize))
+	return set->cnt++, 1;
+    if (kickAdd(fp, set->bb, b1, i1, &fp, set->logsize, set->mask, bsize))
 	return set->cnt++, 1;
     bool sse4 = true;
     if (stashAdd(set, fp, nstash, bsize, sse4))
