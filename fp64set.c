@@ -832,6 +832,34 @@ static inline int t_del(struct set *set, uint64_t fp, bool nstash, int bsize)
     return 0;
 }
 
+static inline uint64_t *t_next(struct set *set, size_t *iter, bool nstash, int bsize)
+{
+    size_t i = *iter;
+    uint64_t *bb = set->bb;
+    size_t n = bsize * (set->mask + 1);
+    // The first bucket?
+    for (; unlikely(i < bsize); i++)
+	if (bb[i] != UINT64_MAX)
+	    return *iter = i + 1, &bb[i];
+    // The rest of the buckets, iterate as flat array.
+    for (; i < n; i++)
+	if (bb[i] != 0)
+	    return *iter = i + 1, &bb[i];
+    if (nstash == 0)
+	return *iter = 0, NULL;
+    if (i == n)
+	return *iter = n + 1, &set->stash[0];
+    if (i == n + 1 && set->stash[0] != set->stash[1])
+	return *iter = n + 2, &set->stash[1];
+    return *iter = 0, NULL;
+}
+
+FP64SET_FASTCALL const uint64_t *fp64set_next(const struct fp64set *arg, size_t *iter)
+{
+    struct set *set = (void *) arg;
+    return t_next(set, iter, set->nstash, set->bsize);
+}
+
 #undef MakeVFuncs
 #define MakeVFuncs(NB, ST)				      \
     VFUNC(has##NB##st##ST) { return t_has(set, fp, ST, NB); } \
