@@ -124,6 +124,43 @@ double bench_has(int bsize, int logsize)
     return (double) (t + dummy % 2) / n;
 }
 
+double bench_del(int bsize, int logsize)
+{
+    size_t n = 0; uint64_t t = 0;
+    for (int i = 0; i < (1<<ITER); i++) {
+	struct fp64set *set = fp64set_new(logsize);
+	size_t fill = 0;
+	uint64_t saveRndState = rndState;
+	// Switch to the right bsize.
+	for (int i = 2; i < bsize; i++) {
+	    size_t nx = 0; uint64_t tx = 0;
+	    addUniq(set, &nx, &tx);
+	    // The element that switched the structure didn't count.
+	    fill += nx + 1;
+	}
+	// Need 50% fill factor.
+	size_t need = (1 << logsize) * bsize / 2;
+	while (fill < need) {
+	    int rc = fp64set_add(set, rnd());
+	    assert(rc == 1);
+	    fill += 1;
+	}
+	rndState = saveRndState;
+	uint64_t tx = __rdtsc();
+	for (size_t i = 0; i < fill; i++) {
+	    bool deleted = fp64set_del(set, rnd());
+	    assert(deleted);
+	}
+	tx = __rdtsc() - tx;
+	n += fill, t += tx;
+	// Try to delete non-existent, should fail.
+	bool deleted = fp64set_del(set, rnd());
+	assert(!deleted);
+	fp64set_free(set);
+    }
+    return (double) t / n;
+}
+
 int main()
 {
     printf("add2 uniq %.1f\n", bench_addUniq(2, 10));
@@ -136,5 +173,8 @@ int main()
     printf("has2 %.1f\n", bench_has(2, 10));
     printf("has3 %.1f\n", bench_has(3, 10));
     printf("has4 %.1f\n", bench_has(4, 10));
+    printf("del2 %.1f\n", bench_del(2, 10));
+    printf("del3 %.1f\n", bench_del(3, 10));
+    printf("del4 %.1f\n", bench_del(4, 10));
     return 0;
 }
