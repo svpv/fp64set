@@ -27,17 +27,18 @@
 
 // The real fp64set structure (upconverted from "void *set").
 struct set {
+    // To reduce the failure rate, one or two fingerprints can be stashed.
+    // When only one fingerprint is stashed, we have stash[0] == stash[1].
+    uint64_t stash[2];
     // Virtual functions.
     int (*add)(uint64_t fp, void *set) FP64SET_FASTCALL;
+    int (*del)(uint64_t fp, void *set) FP64SET_FASTCALL;
     int (*has)(uint64_t fp, void *set) FP64SET_FASTCALL;
     // The number of buckets - 1, helps indexing into the buckets.
     size_t mask;
     // The buckets (malloc'd); each bucket has bsize slots.
     // Two-dimensional structure is emulated with pointer arithmetic.
     uint64_t *bb;
-    // To reduce the failure rate, one or two fingerprints can be stashed.
-    // When only one fingerprint is stashed, we have stash[0] == stash[1].
-    uint64_t stash[2];
     // The total number of unique fingerprints added to buckets,
     // not including the stashed fingerprints.
     size_t cnt;
@@ -131,8 +132,6 @@ static inline int has(uint64_t fp, uint64_t *b1, uint64_t *b2,
 #if SIZE_MAX > UINT32_MAX || defined(__x86_64__) || \
    (defined(__i386__) && 100*__GLIBC__+__GLIBC_MINOR__ >= 226)
 #define A16(p) __builtin_assume_aligned(p, 16)
-// The stash must be loadable with aligned read.
-static_assert(offsetof(struct set, stash) % 16 == 0, "align stash");
 #else
 #define A16(p) __builtin_assume_aligned(p, 8)
 // Disable SSE2 aligned intrinsics.
@@ -223,6 +222,7 @@ static inline SSE4_FUNC int t_has_sse4(struct set *set, uint64_t fp, bool nstash
     int fp64set_##NAME(uint64_t fp, void *set)
 #define MakeVFuncs(NB, ST)  \
     VFUNC(add##NB##st##ST); \
+    VFUNC(del##NB##st##ST); \
     VFUNC(has##NB##st##ST);
 #define MakeAllVFuncs	\
     MakeVFuncs(2, 0)	\
@@ -244,6 +244,7 @@ MakeAllVFuncs
 
 // How to initialize vtab slots.
 #if FP64SET_SSE4
+#define cpu_supports_sse4 __builtin_cpu_supports("sse4.1")
 #define SetVFuncs(set, NB, ST, SSE4)			\
 do {							\
     if (SSE4) {						\
@@ -254,14 +255,27 @@ do {							\
 	set->add = fp64set_add##NB##st##ST;		\
 	set->has = fp64set_has##NB##st##ST;		\
     }							\
+    set->del = fp64set_del##NB##st##ST;			\
 } while (0)
 #else
+#define cpu_supports_sse4 0
 #define SetVFuncs(set, NB, ST, SSE4)			\
 do {							\
     set->add = fp64set_add##NB##st##ST;			\
+    set->del = fp64set_del##NB##st##ST;			\
     set->has = fp64set_has##NB##st##ST;			\
 } while (0)
 #endif
+// In case NB is not a literal.
+#define SelectVFuncs(set, NB, ST, SSE4)			\
+do {							\
+    if (NB == 2)					\
+	SetVFuncs(set, 2, ST, SSE4);			\
+    else if (NB == 3)					\
+	SetVFuncs(set, 3, ST, SSE4);			\
+    else						\
+	SetVFuncs(set, 4, ST, SSE4);			\
+} while (0)
 
 struct fp64set *fp64set_new(int logsize)
 {
@@ -286,11 +300,7 @@ struct fp64set *fp64set_new(int logsize)
     if (!set)
 	return free(bb), NULL;
 
-    bool sse4 = false;
-#if FP64SET_SSE4
-    sse4 = __builtin_cpu_supports("sse4.1");
-#endif
-    SetVFuncs(set, 2, 0, sse4);
+    SetVFuncs(set, 2, 0, cpu_supports_sse4);
 
     set->mask = nb - 1;
     set->bb = bb;
@@ -421,8 +431,9 @@ static inline bool kickAdd(uint64_t fp, uint64_t *bb, uint64_t *b, size_t i,
 	// Put at the top, kick out from the bottom.
 	// Using *ofp as a temporary register.
 	*ofp = b[0];
-	for (int i = 0; i < bsize-1; i++)
-	    b[i] = b[i+1];
+	b[0] = b[1];
+	if (bsize > 2) b[1] = b[2];
+	if (bsize > 3) b[2] = b[3];
 	b[bsize-1] = fp, fp = *ofp;
 	// Ponder over the fingerprint that's been kicked out.
 	// Find out the alternative bucket.
@@ -713,12 +724,7 @@ static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize
 	set->nstash = 1;
 	set->stash[0] = set->stash[1] = fp;
 	// Switch vfuncs to the ones with stash.
-	if (bsize == 2)
-	    SetVFuncs(set, 2, 1, sse4);
-	else if (bsize == 3)
-	    SetVFuncs(set, 3, 1, sse4);
-	else
-	    SetVFuncs(set, 4, 1, sse4);
+	SelectVFuncs(set, bsize, 1, sse4);
 	return true;
     }
     // Free slot in the stash?
@@ -771,10 +777,66 @@ static inline SSE4_FUNC int t_add_sse4(struct set *set, uint64_t fp, bool nstash
 }
 #endif
 
+static inline int t_del(struct set *set, uint64_t fp, bool nstash, int bsize)
+{
+#define DelBucketRet(b, blank)			\
+    return b[bsize-1] = blank, set->cnt--, 1
+#define DelBucket(b, blank)			\
+    do {					\
+	if (b[0] == fp) {			\
+	    b[0] = b[1];			\
+	    if (bsize > 2) b[1] = b[2];		\
+	    if (bsize > 3) b[2] = b[3];		\
+	    DelBucketRet(b, blank);		\
+	}					\
+	if (b[1] == fp) {			\
+	    if (bsize > 2) b[1] = b[2];		\
+	    if (bsize > 3) b[2] = b[3];		\
+	    DelBucketRet(b, blank);		\
+	}					\
+	if (bsize > 2 && b[2] == fp) {		\
+	    if (bsize > 3) b[2] = b[3];		\
+	    DelBucketRet(b, blank);		\
+	}					\
+	if (bsize > 3 && b[3] == fp)		\
+	    DelBucketRet(b, blank);		\
+    } while (0)
+
+    dFP2IB(fp, set->bb, set->mask);
+    uint64_t blank1 = 0 - (i1 == 0);
+    uint64_t blank2 = 0 - (i2 == 0);
+    DelBucket(b1, blank1);
+    DelBucket(b2, blank2);
+    if (nstash == 0)
+	return 0;
+    if (set->stash[0] == fp) {
+	// Only one fingerprint in the stash?
+	if (set->stash[1] == fp) {
+	    set->stash[0] = set->stash[1] = 0;
+	    set->nstash = 0;
+	    // Switch vfuncs to the ones without stash.
+	    SelectVFuncs(set, bsize, 0, cpu_supports_sse4);
+	    return 1;
+	}
+	// Two fingerprints in the stash.
+	set->stash[0] = set->stash[1];
+	set->stash[1] = 0;
+	set->nstash = 1;
+	return 1;
+    }
+    if (set->stash[1] == fp) {
+	set->stash[1] = 0;
+	set->nstash = 1;
+	return 1;
+    }
+    return 0;
+}
+
 #undef MakeVFuncs
 #define MakeVFuncs(NB, ST)				      \
     VFUNC(has##NB##st##ST) { return t_has(set, fp, ST, NB); } \
-    VFUNC(add##NB##st##ST) { return t_add(set, fp, ST, NB); }
+    VFUNC(add##NB##st##ST) { return t_add(set, fp, ST, NB); } \
+    VFUNC(del##NB##st##ST) { return t_del(set, fp, ST, NB); }
 MakeAllVFuncs
 
 #if FP64SET_SSE4

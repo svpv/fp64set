@@ -41,8 +41,11 @@ void fp64set_free(struct fp64set *set);
 
 // Exposes only a part of the structure, just enough to inline the calls.
 struct fp64set {
+    // This guy needs to be 16-byte aligned, have to expose it.
+    uint64_t stash[2];
     // Pass fp first, eax:edx may hold hash() return value.
     int (*add)(uint64_t fp, void *set) FP64SET_FASTCALL;
+    bool (*del)(uint64_t fp, void *set) FP64SET_FASTCALL;
     // Returns int, let the caller booleanize (can be optimized out).
     int (*has)(uint64_t fp, const void *set) FP64SET_FASTCALL;
 };
@@ -60,6 +63,12 @@ struct fp64set {
 static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 {
     return set->add(fp, set);
+}
+
+// Delete a fingerprint from a set, returns false if not found.
+static inline bool fp64set_del(struct fp64set *set, uint64_t fp)
+{
+    return set->del(fp, set);
 }
 
 // Check if the fingerprint is in the set.
