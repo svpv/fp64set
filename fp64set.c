@@ -277,24 +277,30 @@ do {							\
 	SetVFuncs(set, 4, ST, SSE4);			\
 } while (0)
 
+// The sentinels at the end of bb[], for fp64set_next.
+#define SENTINELS 3
+
 struct fp64set *fp64set_new(int logsize)
 {
     assert(logsize >= 0);
     if (logsize < 4)
 	logsize = 4;
-    else if (logsize > 32)
-	return errno = E2BIG, NULL;
-    else if (logsize > 31 && sizeof(size_t) < 5)
+    // The limit on 32-bit platforms is 2GB, logsize=28 allocates 4GB.
+    if (logsize > 27 && sizeof(size_t) < 5)
 	return errno = ENOMEM, NULL;
+    // The ultimate limit: two 32-bit halves out of each fingerprint.
+    if (logsize > 32)
+	return errno = E2BIG, NULL;
 
     // Starting with two slots per bucket.
     size_t nb = (size_t) 1 << logsize;
-    uint64_t *bb = calloc(nb, 2 * sizeof(uint64_t));
+    uint64_t *bb = calloc(2 * nb + SENTINELS, sizeof(uint64_t));
     if (!bb)
 	return NULL;
 
     // The blank value for bb[0][*] slots is UINT64_MAX.
-    bb[0] = bb[1] = UINT64_MAX;
+    memset(A16(bb), 0xff, 2 * sizeof(uint64_t));
+    memset(A16(bb + 2 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     struct set *set = malloc(sizeof *set);
     if (!set)
@@ -469,9 +475,11 @@ static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
 
 static inline uint64_t *reinterp23(uint64_t *bb, size_t nb)
 {
-    bb = reallocarray(bb, nb, 3 * sizeof(uint64_t));
+    // Resizing e.g. 2GB -> 3GB cannot trigger size_t overflow.
+    bb = realloc(bb, (3 * nb + SENTINELS) * sizeof(uint64_t));
     if (!bb)
 	return NULL;
+    memset(A16(bb + 3 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 3-tier array.
     //
@@ -489,11 +497,15 @@ static inline uint64_t *reinterp23(uint64_t *bb, size_t nb)
     return bb;
 }
 
-static inline uint64_t *reinterp34(uint64_t *bb, size_t nb)
+static inline uint64_t *reinterp34(uint64_t *bb, size_t nb, int logsize)
 {
-    bb = reallocarray(bb, nb, 4 * sizeof(uint64_t));
+    // On 32-bit platforms, going 3GB -> 4GB will result in size_t overflow.
+    if (logsize >= 27 && sizeof(size_t) < 5)
+	return errno = ENOMEM, NULL;
+    bb = realloc(bb, (4 * nb + SENTINELS) * sizeof(uint64_t));
     if (!bb)
 	return NULL;
+    memset(A16(bb + 4 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 4-tier array.
     //
@@ -516,7 +528,7 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize, bool sse4)
 {
     uint64_t *bb = bsize == 2 ?
 	    reinterp23(set->bb, set->mask + 1) :
-	    reinterp34(set->bb, set->mask + 1) ;
+	    reinterp34(set->bb, set->mask + 1, set->logsize);
     if (!bb)
 	return false;
     set->bb = bb;
@@ -565,11 +577,15 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize, bool sse4)
 static bool fp64set_resize23(struct set *set, uint64_t fp, bool sse4) { return t_resize(set, fp, 2, sse4); }
 static bool fp64set_resize34(struct set *set, uint64_t fp, bool sse4) { return t_resize(set, fp, 3, sse4); }
 
-static inline uint64_t *reinterp43(uint64_t *bb, size_t nb)
+static inline uint64_t *reinterp43(uint64_t *bb, size_t nb, int logsize)
 {
-    bb = reallocarray(bb, nb, 6 * sizeof(uint64_t));
+    // The logsize is going up, hitting the hash space limit?
+    if (logsize >= 32)
+	return errno = E2BIG, NULL;
+    bb = realloc(bb, (6 * nb + SENTINELS) * sizeof(uint64_t));
     if (!bb)
 	return NULL;
+    memset(A16(bb + 6 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 3-tier array.
     //
@@ -691,7 +707,7 @@ static bool fp64set_resize43(struct set *set, uint64_t fp, bool sse4)
     for (size_t i = 2; i < nb; i += 2)
 	Copy2(4*i, 0, 0);
 
-    bb = reinterp43(bb, nb);
+    bb = reinterp43(bb, nb, set->logsize);
     if (!bb) {
 	free(swap);
 	return false;
@@ -842,9 +858,10 @@ static inline uint64_t *t_next(struct set *set, size_t *iter, bool nstash, int b
 	if (bb[i] != UINT64_MAX)
 	    return *iter = i + 1, &bb[i];
     // The rest of the buckets, iterate as flat array.
-    for (; i < n; i++)
-	if (bb[i] != 0)
-	    return *iter = i + 1, &bb[i];
+    while (bb[i] == 0)
+	i++;
+    if (i < n)
+	return *iter = i + 1, &bb[i];
     if (nstash == 0)
 	return *iter = 0, NULL;
     if (i == n)
