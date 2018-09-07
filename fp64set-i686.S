@@ -29,58 +29,39 @@
 	.size    fp64set_##name,.-fp64set_##name
 
 FUNC(has2st0sse4)
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
-	mov      0x20(%ecx),%ecx
-	mov      %esi,%edi
-	and      %eax,%edi
-	and      %edx,%esi
-	shl      $0x4,%edi
-	shl      $0x4,%esi
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	pinsrd   $0x2,%eax,%xmm0
-	pinsrd   $0x3,%edx,%xmm0
-	movdqa   (%ecx,%edi,1),%xmm1
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	movddup  %xmm0,%xmm0
+	shl      $0x4,%eax
+	shl      $0x4,%edx
+	movdqa   (%ecx,%eax,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (%ecx,%esi,1),%xmm0
-	pmovmskb %xmm1,%ecx
+	pcmpeqq  (%ecx,%edx,1),%xmm0
+	por      %xmm1,%xmm0
 	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
-	pop      %esi
-	pop      %edi
 	ret
 END(has2st0sse4)
 
 FUNC(has2st1sse4)
-	push     %ebx
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
-	mov      0x20(%ecx),%edi
-	mov      %esi,%ebx
-	and      %eax,%ebx
-	and      %edx,%esi
-	shl      $0x4,%ebx
-	shl      $0x4,%esi
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	pinsrd   $0x2,%eax,%xmm0
-	pinsrd   $0x3,%edx,%xmm0
-	movdqa   (%edi,%ebx,1),%xmm1
-	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%edi,%esi,1),%xmm2
+	movdqa   (%ecx),%xmm2
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	movddup  %xmm0,%xmm0
+	shl      $0x4,%eax
+	shl      $0x4,%edx
+	movdqa   (%ecx,%eax,1),%xmm1
 	pcmpeqq  %xmm0,%xmm2
-	pcmpeqq  (%ecx),%xmm0
-	pmovmskb %xmm1,%ecx
-	pmovmskb %xmm2,%edx
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  (%ecx,%edx,1),%xmm0
+	por      %xmm2,%xmm0
+	por      %xmm1,%xmm0
 	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
-	or       %edx,%eax
-	pop      %esi
-	pop      %edi
-	pop      %ebx
 	ret
 END(has2st1sse4)
 
