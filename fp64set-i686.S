@@ -66,71 +66,49 @@ FUNC(has2st1sse4)
 END(has2st1sse4)
 
 FUNC(has3st0sse4)
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
+	movd     %eax,%xmm0
+	pinsrd   $0x1,%edx,%xmm0
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
 	mov      0x20(%ecx),%ecx
-	mov      %esi,%edi
-	and      %eax,%edi
-	and      %edx,%esi
-	lea      (%edi,%edi,2),%edi
-	lea      (%esi,%esi,2),%esi
-	movdqu   (%ecx,%edi,8),%xmm0
-	movdqu   (%ecx,%esi,8),%xmm1
-	movd     %eax,%xmm2
-	pinsrd   $0x1,%edx,%xmm2
-	pinsrd   $0x2,%eax,%xmm2
-	pinsrd   $0x3,%edx,%xmm2
-	movd     0x10(%ecx,%esi,8),%xmm3
-	pinsrd   $0x1,0x14(%ecx,%esi,8),%xmm3
-	pinsrd   $0x2,0x10(%ecx,%edi,8),%xmm3
-	pinsrd   $0x3,0x14(%ecx,%edi,8),%xmm3
-	pcmpeqq  %xmm2,%xmm0
-	pcmpeqq  %xmm2,%xmm1
-	pcmpeqq  %xmm2,%xmm3
-	pmovmskb %xmm0,%ecx
-	pmovmskb %xmm1,%edx
-	pmovmskb %xmm3,%eax
-	or       %ecx,%eax
-	or       %edx,%eax
-	pop      %esi
-	pop      %edi
+	lea      (%eax,%eax,2),%eax
+	lea      (%edx,%edx,2),%edx
+	movddup  %xmm0,%xmm0
+	movdqu   0x8(%ecx,%eax,8),%xmm1
+	movdqu   0x8(%ecx,%edx,8),%xmm2
+	movq     (%ecx,%eax,8),%xmm3
+	movhps   (%ecx,%edx,8),%xmm3
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %xmm0,%xmm2
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
 	ret
 END(has3st0sse4)
 
 FUNC(has3st1sse4)
-	push     %ebx
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
-	mov      0x20(%ecx),%edi
-	mov      %esi,%ebx
-	and      %eax,%ebx
-	and      %edx,%esi
-	lea      (%ebx,%ebx,2),%ebx
-	lea      (%esi,%esi,2),%esi
-	movdqu   (%edi,%ebx,8),%xmm0
-	movdqu   (%edi,%esi,8),%xmm1
-	movd     %eax,%xmm2
-	pinsrd   $0x1,%edx,%xmm2
-	pinsrd   $0x2,%eax,%xmm2
-	pinsrd   $0x3,%edx,%xmm2
-	movd     0x10(%edi,%esi,8),%xmm3
-	pinsrd   $0x1,0x14(%edi,%esi,8),%xmm3
-	pinsrd   $0x2,0x10(%edi,%ebx,8),%xmm3
-	pinsrd   $0x3,0x14(%edi,%ebx,8),%xmm3
-	pcmpeqq  %xmm2,%xmm0
-	pcmpeqq  %xmm2,%xmm1
-	por      %xmm0,%xmm1
-	pcmpeqq  %xmm2,%xmm3
-	pcmpeqq  (%ecx),%xmm2
-	por      %xmm3,%xmm2
-	pmovmskb %xmm1,%ecx
-	pmovmskb %xmm2,%eax
-	or       %ecx,%eax
-	pop      %esi
-	pop      %edi
-	pop      %ebx
+	movd     %eax,%xmm0
+	pinsrd   $0x1,%edx,%xmm0
+	movdqa   (%ecx),%xmm4
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	lea      (%eax,%eax,2),%eax
+	lea      (%edx,%edx,2),%edx
+	movddup  %xmm0,%xmm0
+	movdqu   0x8(%ecx,%eax,8),%xmm1
+	movdqu   0x8(%ecx,%edx,8),%xmm2
+	movq     (%ecx,%eax,8),%xmm3
+	movhps   (%ecx,%edx,8),%xmm3
+	pcmpeqq  %xmm0,%xmm4
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %xmm0,%xmm2
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm4,%xmm1
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
 	ret
 END(has3st1sse4)
 
