@@ -113,69 +113,51 @@ FUNC(has3st1sse4)
 END(has3st1sse4)
 
 FUNC(has4st0sse4)
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
-	mov      0x20(%ecx),%ecx
-	mov      %esi,%edi
-	and      %eax,%edi
-	and      %edx,%esi
-	shl      $0x5,%edi
-	shl      $0x5,%esi
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	pinsrd   $0x2,%eax,%xmm0
-	pinsrd   $0x3,%edx,%xmm0
-	movdqa   (%ecx,%edi,1),%xmm1
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	movddup  %xmm0,%xmm0
+	shl      $0x5,%eax
+	shl      $0x5,%edx
+	movdqa   (%ecx,%eax,1),%xmm1
+	movdqa   (%ecx,%edx,1),%xmm2
+	movdqa   0x10(%ecx,%eax,1),%xmm3
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%ecx,%esi,1),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	movdqa   0x10(%ecx,%edi,1),%xmm1
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  0x10(%ecx,%esi,1),%xmm0
-	por      %xmm1,%xmm0
-	pmovmskb %xmm2,%ecx
-	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
-	pop      %esi
-	pop      %edi
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm2,%xmm1
+	pcmpeqq  0x10(%ecx,%edx,1),%xmm0
+	por      %xmm3,%xmm1
+	por      %xmm0,%xmm1
+	pmovmskb %xmm1,%eax
 	ret
 END(has4st0sse4)
 
 FUNC(has4st1sse4)
-	push     %ebx
-	push     %edi
-	push     %esi
-	mov      0x1c(%ecx),%esi
-	mov      0x20(%ecx),%edi
-	mov      %esi,%ebx
-	and      %eax,%ebx
-	and      %edx,%esi
-	shl      $0x5,%ebx
-	shl      $0x5,%esi
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	pinsrd   $0x2,%eax,%xmm0
-	pinsrd   $0x3,%edx,%xmm0
-	movdqa   (%edi,%ebx,1),%xmm1
+	movdqa   (%ecx),%xmm5
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	movddup  %xmm0,%xmm0
+	shl      $0x5,%eax
+	shl      $0x5,%edx
+	movdqa   (%ecx,%eax,1),%xmm1
+	movdqa   (%ecx,%edx,1),%xmm2
+	pcmpeqq  %xmm0,%xmm5
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%edi,%esi,1),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	movdqa   (%ecx),%xmm1
-	pcmpeqq  %xmm0,%xmm1
-	movdqa   0x10(%edi,%ebx,1),%xmm3
+	movdqa   0x10(%ecx,%eax,1),%xmm3
+	movdqa   0x10(%ecx,%edx,1),%xmm4
 	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  0x10(%edi,%esi,1),%xmm0
-	por      %xmm3,%xmm0
-	pmovmskb %xmm1,%ecx
-	pmovmskb %xmm2,%edx
-	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
-	or       %edx,%eax
-	pop      %esi
-	pop      %edi
-	pop      %ebx
+	pcmpeqq  %xmm0,%xmm4
+	por      %xmm5,%xmm1
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	por      %xmm4,%xmm1
+	pmovmskb %xmm1,%eax
 	ret
 END(has4st1sse4)
