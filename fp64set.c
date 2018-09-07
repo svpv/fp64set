@@ -69,6 +69,7 @@ struct set {
     FP2IB(fp, bb, mask)
 
 #define unlikely(cond) __builtin_expect(cond, 0)
+#define HIDDEN __attribute__((visibility("hidden")))
 
 // The inline functions below rely heavily on constant propagation.
 #define inline inline __attribute__((always_inline))
@@ -218,12 +219,12 @@ static inline SSE4_FUNC int t_has_sse4(struct set *set, uint64_t fp, bool nstash
 
 // Instantiate generic functions, only prototypes for now.
 #define VFUNC(NAME) \
-    static FP64SET_FASTCALL \
+    FP64SET_FASTCALL \
     int fp64set_##NAME(uint64_t fp, void *set)
 #define MakeVFuncs(NB, ST)  \
-    VFUNC(add##NB##st##ST); \
-    VFUNC(del##NB##st##ST); \
-    VFUNC(has##NB##st##ST);
+    static VFUNC(add##NB##st##ST); \
+    static VFUNC(del##NB##st##ST); \
+    static VFUNC(has##NB##st##ST);
 #define MakeAllVFuncs	\
     MakeVFuncs(2, 0)	\
     MakeVFuncs(2, 1)	\
@@ -237,8 +238,8 @@ MakeAllVFuncs
 #if FP64SET_SSE4
 #undef MakeVFuncs
 #define MakeVFuncs(NB, ST)		    \
-    VFUNC(add##NB##st##ST##sse4) SSE4_FUNC; \
-    VFUNC(has##NB##st##ST##sse4) SSE4_FUNC;
+    static VFUNC(add##NB##st##ST##sse4) SSE4_FUNC; \
+    HIDDEN VFUNC(has##NB##st##ST##sse4) SSE4_FUNC;
 MakeAllVFuncs
 #endif
 
@@ -887,7 +888,6 @@ MakeAllVFuncs
 #if FP64SET_SSE4
 #undef MakeVFuncs
 #define MakeVFuncs(NB, ST)						 \
-    VFUNC(has##NB##st##ST##sse4) { return t_has_sse4(set, fp, ST, NB); } \
     VFUNC(add##NB##st##ST##sse4) { return t_add_sse4(set, fp, ST, NB); }
 MakeAllVFuncs
 #endif
