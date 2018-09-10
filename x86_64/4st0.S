@@ -33,13 +33,12 @@ FUNC(has4st0sse4)
 	pcmpeqq  %xmm0,%xmm1
 	movdqa   (%rcx,%rdi,1),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	movdqa   16(%rcx,%rdx,1),%xmm1
-	pcmpeqq  %xmm0,%xmm1
+	movdqa   16(%rcx,%rdx,1),%xmm3
+	pcmpeqq  %xmm0,%xmm3
 	pcmpeqq  16(%rcx,%rdi,1),%xmm0
-	por      %xmm1,%xmm0
-	pmovmskb %xmm2,%ecx
+	por      %xmm1,%xmm2
+	por      %xmm3,%xmm0
+	por      %xmm2,%xmm0
 	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
 	retq
 END(has4st0sse4)

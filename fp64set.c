@@ -144,61 +144,63 @@ static inline int has(uint64_t fp, uint64_t *b1, uint64_t *b2,
 static inline SSE4_FUNC int has_sse4(uint64_t fp, uint64_t *b1, uint64_t *b2,
 	bool nstash, uint64_t *stash, int bsize)
 {
-    __m128i xmm9;
+    __m128i xmm7;
     if (bsize == 3) {
 	__m128i xmm1 = _mm_loadu_si128((__m128i *) b1);
 	__m128i xmm2 = _mm_loadu_si128((__m128i *) b2);
 	__m128i xmm0 = _mm_set1_epi64x(fp);
 	__m128i xmm3 = _mm_set_epi64x(b1[2], b2[2]);
 	if (nstash)
-	    xmm9 = _mm_load_si128((__m128i *) stash);
+	    xmm7 = _mm_load_si128((__m128i *) stash);
 	xmm1 = _mm_cmpeq_epi64(xmm1, xmm0);
 	xmm2 = _mm_cmpeq_epi64(xmm2, xmm0);
 	xmm3 = _mm_cmpeq_epi64(xmm3, xmm0);
 	if (nstash) {
-	    xmm9 = _mm_cmpeq_epi64(xmm9, xmm0);
+	    xmm7 = _mm_cmpeq_epi64(xmm7, xmm0);
 	    xmm1 = _mm_or_si128(xmm1, xmm2);
-	    xmm3 = _mm_or_si128(xmm3, xmm9);
-	    return _mm_movemask_epi8(xmm1) |
-		   _mm_movemask_epi8(xmm3) ;
+	    xmm3 = _mm_or_si128(xmm3, xmm7);
+	    xmm1 = _mm_or_si128(xmm1, xmm3);
+	    return _mm_movemask_epi8(xmm1);
 	}
-	return _mm_movemask_epi8(xmm1) |
-	       _mm_movemask_epi8(xmm2) |
-	       _mm_movemask_epi8(xmm3) ;
+	xmm1 = _mm_or_si128(xmm1, xmm2);
+	xmm1 = _mm_or_si128(xmm1, xmm3);
+	return _mm_movemask_epi8(xmm1);
     }
     __m128i xmm1 = _mm_load_si128((__m128i *) b1);
     __m128i xmm2 = _mm_load_si128((__m128i *) b2);
     __m128i xmm0 = _mm_set1_epi64x(fp);
     if (nstash)
-	xmm9 = _mm_load_si128((__m128i *) stash);
+	xmm7 = _mm_load_si128((__m128i *) stash);
     if (bsize == 2) {
 	xmm1 = _mm_cmpeq_epi64(xmm1, xmm0);
 	xmm2 = _mm_cmpeq_epi64(xmm2, xmm0);
 	if (nstash) {
-	    xmm9 = _mm_cmpeq_epi64(xmm9, xmm0);
-	    return _mm_movemask_epi8(xmm1) |
-		   _mm_movemask_epi8(xmm2) |
-		   _mm_movemask_epi8(xmm9) ;
+	    xmm7 = _mm_cmpeq_epi64(xmm7, xmm0);
+	    xmm1 = _mm_or_si128(xmm1, xmm2);
+	    xmm1 = _mm_or_si128(xmm1, xmm7);
+	    return _mm_movemask_epi8(xmm1);
 	}
-	return _mm_movemask_epi8(xmm1) |
-	       _mm_movemask_epi8(xmm2) ;
+	xmm1 = _mm_or_si128(xmm1, xmm2);
+	return _mm_movemask_epi8(xmm1);
     }
     __m128i xmm3 = _mm_load_si128((__m128i *) b1 + 1);
     __m128i xmm4 = _mm_load_si128((__m128i *) b2 + 1);
     xmm1 = _mm_cmpeq_epi64(xmm1, xmm0);
     xmm2 = _mm_cmpeq_epi64(xmm2, xmm0);
     if (nstash)
-	xmm9 = _mm_cmpeq_epi64(xmm9, xmm0);
+	xmm7 = _mm_cmpeq_epi64(xmm7, xmm0);
     xmm3 = _mm_cmpeq_epi64(xmm3, xmm0);
     xmm4 = _mm_cmpeq_epi64(xmm4, xmm0);
     xmm1 = _mm_or_si128(xmm1, xmm2);
+    if (nstash) {
+	xmm3 = _mm_or_si128(xmm3, xmm7);
+	xmm1 = _mm_or_si128(xmm1, xmm4);
+	xmm1 = _mm_or_si128(xmm1, xmm3);
+	return _mm_movemask_epi8(xmm1);
+    }
     xmm3 = _mm_or_si128(xmm3, xmm4);
-    if (nstash)
-	return _mm_movemask_epi8(xmm9) |
-	       _mm_movemask_epi8(xmm1) |
-	       _mm_movemask_epi8(xmm3) ;
-    return _mm_movemask_epi8(xmm1) |
-	   _mm_movemask_epi8(xmm3) ;
+    xmm1 = _mm_or_si128(xmm1, xmm3);
+    return _mm_movemask_epi8(xmm1);
 }
 #endif
 

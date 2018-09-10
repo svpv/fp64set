@@ -36,11 +36,9 @@ FUNC(has3st0sse4)
 	punpcklqdq %xmm3,%xmm4
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
+	por      %xmm1,%xmm2
 	pcmpeqq  %xmm0,%xmm4
-	pmovmskb %xmm1,%eax
-	pmovmskb %xmm2,%ecx
-	or       %eax,%ecx
+	por      %xmm2,%xmm4
 	pmovmskb %xmm4,%eax
-	or       %ecx,%eax
 	retq
 END(has3st0sse4)

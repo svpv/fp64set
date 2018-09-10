@@ -36,12 +36,11 @@ FUNC(has3st1sse4)
 	punpcklqdq %xmm3,%xmm4
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
 	pcmpeqq  %xmm0,%xmm4
 	pcmpeqq  m_stash(%rsi),%xmm0
+	por      %xmm1,%xmm2
+	por      %xmm2,%xmm0
 	por      %xmm4,%xmm0
-	pmovmskb %xmm2,%ecx
 	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
 	retq
 END(has3st1sse4)

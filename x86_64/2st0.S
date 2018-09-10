@@ -32,8 +32,7 @@ FUNC(has2st0sse4)
 	movdqa   (%rcx,%rdx,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  (%rcx,%rdi,1),%xmm0
-	pmovmskb %xmm1,%ecx
+	por      %xmm1,%xmm0
 	pmovmskb %xmm0,%eax
-	or       %ecx,%eax
 	retq
 END(has2st0sse4)
