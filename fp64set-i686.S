@@ -48,11 +48,11 @@ END(has2st0sse4)
 FUNC(has2st1sse4)
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	movdqa   (%ecx),%xmm2
 	and      0x1c(%ecx),%eax
 	and      0x1c(%ecx),%edx
-	mov      0x20(%ecx),%ecx
+	movdqa   (%ecx),%xmm2
 	movddup  %xmm0,%xmm0
+	mov      0x20(%ecx),%ecx
 	shl      $0x4,%eax
 	shl      $0x4,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
@@ -90,22 +90,22 @@ END(has3st0sse4)
 FUNC(has3st1sse4)
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	movdqa   (%ecx),%xmm4
 	and      0x1c(%ecx),%eax
 	and      0x1c(%ecx),%edx
+	movdqa   (%ecx),%xmm4
+	movddup  %xmm0,%xmm0
 	mov      0x20(%ecx),%ecx
 	lea      (%eax,%eax,2),%eax
 	lea      (%edx,%edx,2),%edx
-	movddup  %xmm0,%xmm0
 	movdqu   0x8(%ecx,%eax,8),%xmm1
 	movdqu   0x8(%ecx,%edx,8),%xmm2
-	movq     (%ecx,%eax,8),%xmm3
-	movhps   (%ecx,%edx,8),%xmm3
 	pcmpeqq  %xmm0,%xmm4
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
-	pcmpeqq  %xmm0,%xmm3
 	por      %xmm4,%xmm1
+	movq     (%ecx,%eax,8),%xmm3
+	movhps   (%ecx,%edx,8),%xmm3
+	pcmpeqq  %xmm0,%xmm3
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%eax
@@ -123,8 +123,8 @@ FUNC(has4st0sse4)
 	shl      $0x5,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
 	movdqa   (%ecx,%edx,1),%xmm2
-	movdqa   0x10(%ecx,%eax,1),%xmm3
 	pcmpeqq  %xmm0,%xmm1
+	movdqa   0x10(%ecx,%eax,1),%xmm3
 	pcmpeqq  %xmm0,%xmm2
 	pcmpeqq  %xmm0,%xmm3
 	por      %xmm2,%xmm1
