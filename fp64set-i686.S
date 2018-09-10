@@ -28,7 +28,13 @@
 #define END(name) \
 	.size    fp64set_##name,.-fp64set_##name
 
+#define m_mask   28
+#define m_bb     32
+#define m_stash  0
+
 #include "i686/2st0.S"
 #include "i686/2st1.S"
 #include "i686/3st0.S"
 #include "i686/3st1.S"
+#include "i686/4st0.S"
+#include "i686/4st1.S"

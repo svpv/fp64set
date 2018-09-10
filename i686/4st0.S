@@ -21,9 +21,9 @@
 FUNC(has4st0sse4)
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	and      0x1c(%ecx),%eax
-	and      0x1c(%ecx),%edx
-	mov      0x20(%ecx),%ecx
+	and      m_mask(%ecx),%eax
+	and      m_mask(%ecx),%edx
+	mov      m_bb(%ecx),%ecx
 	movddup  %xmm0,%xmm0
 	shl      $0x5,%eax
 	shl      $0x5,%edx

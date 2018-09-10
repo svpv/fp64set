@@ -21,18 +21,18 @@
 FUNC(has2st1sse4)
 	movd     %eax,%xmm0
 	pinsrd   $0x1,%edx,%xmm0
-	and      0x1c(%ecx),%eax
-	and      0x1c(%ecx),%edx
-	movdqa   (%ecx),%xmm2
+	and      m_mask(%ecx),%eax
+	and      m_mask(%ecx),%edx
+	movdqa   m_stash(%ecx),%xmm7
 	movddup  %xmm0,%xmm0
-	mov      0x20(%ecx),%ecx
+	mov      m_bb(%ecx),%ecx
 	shl      $0x4,%eax
 	shl      $0x4,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
-	pcmpeqq  %xmm0,%xmm2
+	pcmpeqq  %xmm0,%xmm7
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  (%ecx,%edx,1),%xmm0
-	por      %xmm2,%xmm0
+	por      %xmm7,%xmm0
 	por      %xmm1,%xmm0
 	pmovmskb %xmm0,%eax
 	ret
