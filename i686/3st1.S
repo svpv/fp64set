@@ -18,17 +18,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#define FUNC(name)  \
-	.global  fp64set_##name; \
-	.hidden  fp64set_##name; \
-	.type    fp64set_##name,@function; \
-	.align   16; \
-	fp64set_##name: \
-
-#define END(name) \
-	.size    fp64set_##name,.-fp64set_##name
-
-#include "i686/2st0.S"
-#include "i686/2st1.S"
-#include "i686/3st0.S"
-#include "i686/3st1.S"
+FUNC(has3st1sse4)
+	movd     %eax,%xmm0
+	pinsrd   $0x1,%edx,%xmm0
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	movdqa   (%ecx),%xmm4
+	movddup  %xmm0,%xmm0
+	mov      0x20(%ecx),%ecx
+	lea      (%eax,%eax,2),%eax
+	lea      (%edx,%edx,2),%edx
+	movdqu   0x8(%ecx,%eax,8),%xmm1
+	movdqu   0x8(%ecx,%edx,8),%xmm2
+	pcmpeqq  %xmm0,%xmm4
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %xmm0,%xmm2
+	por      %xmm4,%xmm1
+	movq     (%ecx,%eax,8),%xmm3
+	movhps   (%ecx,%edx,8),%xmm3
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
+	ret
+END(has3st1sse4)

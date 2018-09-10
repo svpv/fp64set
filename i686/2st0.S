@@ -18,17 +18,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#define FUNC(name)  \
-	.global  fp64set_##name; \
-	.hidden  fp64set_##name; \
-	.type    fp64set_##name,@function; \
-	.align   16; \
-	fp64set_##name: \
-
-#define END(name) \
-	.size    fp64set_##name,.-fp64set_##name
-
-#include "i686/2st0.S"
-#include "i686/2st1.S"
-#include "i686/3st0.S"
-#include "i686/3st1.S"
+FUNC(has2st0sse4)
+	movd     %eax,%xmm0
+	pinsrd   $0x1,%edx,%xmm0
+	and      0x1c(%ecx),%eax
+	and      0x1c(%ecx),%edx
+	mov      0x20(%ecx),%ecx
+	movddup  %xmm0,%xmm0
+	shl      $0x4,%eax
+	shl      $0x4,%edx
+	movdqa   (%ecx,%eax,1),%xmm1
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  (%ecx,%edx,1),%xmm0
+	por      %xmm1,%xmm0
+	pmovmskb %xmm0,%eax
+	ret
+END(has2st0sse4)
