@@ -20,13 +20,13 @@
 
 FUNC(has2st0sse4)
 	movd     %eax,%xmm0
-	pinsrd   $0x1,%edx,%xmm0
+	pinsrd   $1,%edx,%xmm0
 	and      m_mask(%ecx),%eax
 	and      m_mask(%ecx),%edx
 	mov      m_bb(%ecx),%ecx
 	movddup  %xmm0,%xmm0
-	shl      $0x4,%eax
-	shl      $0x4,%edx
+	shl      $4,%eax
+	shl      $4,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  (%ecx,%edx,1),%xmm0

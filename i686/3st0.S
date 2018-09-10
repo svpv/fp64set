@@ -20,15 +20,15 @@
 
 FUNC(has3st0sse4)
 	movd     %eax,%xmm0
-	pinsrd   $0x1,%edx,%xmm0
+	pinsrd   $1,%edx,%xmm0
 	and      m_mask(%ecx),%eax
 	and      m_mask(%ecx),%edx
 	mov      m_bb(%ecx),%ecx
 	lea      (%eax,%eax,2),%eax
 	lea      (%edx,%edx,2),%edx
 	movddup  %xmm0,%xmm0
-	movdqu   0x8(%ecx,%eax,8),%xmm1
-	movdqu   0x8(%ecx,%edx,8),%xmm2
+	movdqu   8(%ecx,%eax,8),%xmm1
+	movdqu   8(%ecx,%edx,8),%xmm2
 	movq     (%ecx,%eax,8),%xmm3
 	movhps   (%ecx,%edx,8),%xmm3
 	pcmpeqq  %xmm0,%xmm1

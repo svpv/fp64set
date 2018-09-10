@@ -20,7 +20,7 @@
 
 FUNC(has3st1sse4)
 	movd     %eax,%xmm0
-	pinsrd   $0x1,%edx,%xmm0
+	pinsrd   $1,%edx,%xmm0
 	and      m_mask(%ecx),%eax
 	and      m_mask(%ecx),%edx
 	movdqa   m_stash(%ecx),%xmm7
@@ -28,8 +28,8 @@ FUNC(has3st1sse4)
 	mov      m_bb(%ecx),%ecx
 	lea      (%eax,%eax,2),%eax
 	lea      (%edx,%edx,2),%edx
-	movdqu   0x8(%ecx,%eax,8),%xmm1
-	movdqu   0x8(%ecx,%edx,8),%xmm2
+	movdqu   8(%ecx,%eax,8),%xmm1
+	movdqu   8(%ecx,%edx,8),%xmm2
 	pcmpeqq  %xmm0,%xmm7
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
