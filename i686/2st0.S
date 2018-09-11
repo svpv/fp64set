@@ -87,7 +87,7 @@ FUNC(add2st0sse4)
 	pcmpeqq  %xmm3,%xmm1
 	pmovmskb %xmm1,%ebx
 	test     %ebx,%ebx
-	jnz      4f
+	jnz      3f
 
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
@@ -99,27 +99,17 @@ FUNC(add2st0sse4)
 
 	// Successful justAdd() lands here.
 2:	test     %bl,%bl
-	jz       3f
+	cmovz    %edx,%eax
+	mov      save_ebx(%esp),%ebx
+	add      $16,%esp
 	movq     %xmm0,(%ecx,%eax,1)
-	mov      save_ebx(%esp),%ebx
-	add      $16,%esp
 	mov      $1,%eax
 	ret
-3:	movq     %xmm0,(%ecx,%edx,1)
+3:	test     %bl,%bl
+	cmovz    %edx,%eax
 	mov      save_ebx(%esp),%ebx
 	add      $16,%esp
-	mov      $1,%eax
-	ret
-4:	test     %bl,%bl
-	jz       5f
 	movq     %xmm0,8(%ecx,%eax,1)
-	mov      save_ebx(%esp),%ebx
-	add      $16,%esp
-	mov      $1,%eax
-	ret
-5:	movq     %xmm0,8(%ecx,%edx,1)
-	mov      save_ebx(%esp),%ebx
-	add      $16,%esp
 	mov      $1,%eax
 	ret
 
