@@ -139,10 +139,8 @@ FUNC(add2st0sse4)
 	// Check for empty slots and insert.
 	pcmpeqq  (%ecx,%edx,1),%xmm1
 	pmovmskb %xmm1,%eax
-	test     %al,%al
-	jnz      12f
 	test     %eax,%eax
-	jnz      13f
+	jnz      12f
 
 	// No free slot at edx.
 	movdqa   %xmm7,%xmm0
@@ -156,10 +154,13 @@ FUNC(add2st0sse4)
 	jmp      20f
 
 	// Successful kickAdd() lands here.
-13:	add      $8,%edx
-12:	movq     %xmm7,(%ecx,%edx,1)
+12:	mov      %edx,%ebx
+	add      $8,%ebx
+	test     %al,%al
+	cmovz    %ebx,%edx
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
+	movq     %xmm7,(%ecx,%edx,1)
 	add      $16,%esp
 	mov      $1,%eax
 	ret
