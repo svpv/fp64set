@@ -115,7 +115,7 @@ FUNC(add2st0sse4)
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom goes into xmm7.
-	.align   16
+	.align   32
 10:	movq     (%ecx,%eax,1),%xmm7
 	movq     8(%ecx,%eax,1),%xmm1
 	movq     %xmm1,(%ecx,%eax,1)
