@@ -40,6 +40,7 @@ FUNC(add2st0sse4)
 #define save_ecx 0
 #define save_ebx 4
 #define save_esi 8
+#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -91,6 +92,7 @@ FUNC(add2st0sse4)
 
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
+	mov      %edi,save_edi(%esp)
 	mov      save_ecx(%esp),%ebx
 	mov      m_logsize(%ebx),%esi
 	shl      $1,%esi
@@ -123,16 +125,16 @@ FUNC(add2st0sse4)
 
 	// Find the alternative bucket for xmm7 at edx.
 	movd     %xmm7,%edx
+	pextrd   $1,%xmm7,%edi
 	and      %ebx,%edx
+	and      %ebx,%edi
 	shl      $4,%edx
+	shl      $4,%edi
 	cmp      %eax,%edx
-	jne      11f
-	pextrd   $1,%xmm7,%edx
-	and      %ebx,%edx
-	shl      $4,%edx
+	cmovz    %edi,%edx
 
 	// Make the blank value for bb[edx].
-11:	movd     %edx,%xmm1
+	movd     %edx,%xmm1
 	pinsrd   $2,%edx,%xmm1
 	pcmpeqq  %xmm6,%xmm1
 
@@ -160,6 +162,7 @@ FUNC(add2st0sse4)
 	cmovz    %ebx,%edx
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
 	movq     %xmm7,(%ecx,%edx,1)
 	add      $16,%esp
 	mov      $1,%eax
@@ -170,6 +173,7 @@ FUNC(add2st0sse4)
 	mov      save_ecx(%esp),%ecx
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
 	add      $16,%esp
 	movdqa   %xmm0,m_stash(%ecx)
 	subl     $1,m_cnt(%ecx)
