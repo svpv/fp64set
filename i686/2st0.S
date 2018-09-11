@@ -78,20 +78,16 @@ FUNC(add2st0sse4)
 	movhps   (%ecx,%edx,1),%xmm1
 	pcmpeqq  %xmm3,%xmm1
 	pmovmskb %xmm1,%ebx
-	test     %bl,%bl
-	jnz      2f
 	test     %ebx,%ebx
-	jnz      3f
+	jnz      2f
 
 	// Load b1[1] + b2[1], check for a free slot.
 	movq     8(%ecx,%eax,1),%xmm1
 	movhps   8(%ecx,%edx,1),%xmm1
 	pcmpeqq  %xmm3,%xmm1
 	pmovmskb %xmm1,%ebx
-	test     %bl,%bl
-	jnz      4f
 	test     %ebx,%ebx
-	jnz      5f
+	jnz      4f
 
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
@@ -102,14 +98,26 @@ FUNC(add2st0sse4)
 	jmp      10f
 
 	// Successful justAdd() lands here.
-4:	add      $8,%eax
-2:	movq     %xmm0,(%ecx,%eax,1)
+2:	test     %bl,%bl
+	jz       3f
+	movq     %xmm0,(%ecx,%eax,1)
 	mov      save_ebx(%esp),%ebx
 	add      $16,%esp
 	mov      $1,%eax
 	ret
-5:	add      $8,%edx
 3:	movq     %xmm0,(%ecx,%edx,1)
+	mov      save_ebx(%esp),%ebx
+	add      $16,%esp
+	mov      $1,%eax
+	ret
+4:	test     %bl,%bl
+	jz       5f
+	movq     %xmm0,8(%ecx,%eax,1)
+	mov      save_ebx(%esp),%ebx
+	add      $16,%esp
+	mov      $1,%eax
+	ret
+5:	movq     %xmm0,8(%ecx,%edx,1)
 	mov      save_ebx(%esp),%ebx
 	add      $16,%esp
 	mov      $1,%eax
