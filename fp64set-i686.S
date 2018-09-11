@@ -18,19 +18,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#define NAME(name) fp64set_##name
+#define FPTR(name) $NAME(name)
+
 #define FUNC(name)  \
-	.global  fp64set_##name; \
-	.hidden  fp64set_##name; \
-	.type    fp64set_##name,@function; \
-	.align   16; \
-	fp64set_##name: \
+	.global    NAME(name); \
+	.hidden    NAME(name); \
+	.type      NAME(name),@function; \
+	.align     16; \
+	NAME(name):
 
 #define END(name) \
-	.size    fp64set_##name,.-fp64set_##name
+	.size      NAME(name),.-NAME(name)
 
-#define m_mask   28
-#define m_bb     32
-#define m_stash  0
+#define m_stash    0
+#define m_add      16
+#define m_del      20
+#define m_has      24
+#define m_mask     28
+#define m_bb       32
+#define m_cnt      36
+#define m_nstash   40
+#define m_logsize  44
+#define m_bsize    48
 
 #include "i686/2st0.S"
 #include "i686/2st1.S"
