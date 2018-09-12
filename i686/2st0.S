@@ -156,10 +156,8 @@ FUNC(add2st0sse4)
 	jmp      20f
 
 	// Successful kickAdd() lands here.
-12:	mov      %edx,%ebx
-	add      $8,%ebx
-	test     %al,%al
-	cmovz    %ebx,%edx
+12:	bsf      %eax,%eax
+	add      %eax,%edx
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
