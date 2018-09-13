@@ -54,13 +54,19 @@ FUNC(add4st0sse4)
 	and      m_mask(%ecx),%edx
 	mov      m_bb(%ecx),%ecx
 	movddup  %xmm0,%xmm0
-	shl      $4,%eax
-	shl      $4,%edx
+	shl      $5,%eax
+	shl      $5,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
 	movdqa   (%ecx,%edx,1),%xmm2
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
 	por      %xmm2,%xmm1
+	movdqa   16(%ecx,%eax,1),%xmm3
+	movdqa   16(%ecx,%edx,1),%xmm4
+	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  %xmm0,%xmm4
+	por      %xmm4,%xmm1
+	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%ecx
 	test     %ecx,%ecx
 	jz       1f
@@ -96,6 +102,22 @@ FUNC(add4st0sse4)
 	test     %ebx,%ebx
 	jnz      3f
 
+	// Load b1[2] + b2[2], check for a free slot.
+	movq     16(%ecx,%eax,1),%xmm1
+	movhps   16(%ecx,%edx,1),%xmm1
+	pcmpeqq  %xmm3,%xmm1
+	pmovmskb %xmm1,%ebx
+	test     %ebx,%ebx
+	jnz      4f
+
+	// Load b1[3] + b2[3], check for a free slot.
+	movq     24(%ecx,%eax,1),%xmm1
+	movhps   24(%ecx,%edx,1),%xmm1
+	pcmpeqq  %xmm3,%xmm1
+	pmovmskb %xmm1,%ebx
+	test     %ebx,%ebx
+	jnz      5f
+
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
@@ -120,22 +142,38 @@ FUNC(add4st0sse4)
 	movq     %xmm0,8(%ecx,%eax,1)
 	mov      $1,%eax
 	ret
+4:	test     %bl,%bl
+	cmovz    %edx,%eax
+	mov      save_ebx(%esp),%ebx
+	add      $16,%esp
+	movq     %xmm0,16(%ecx,%eax,1)
+	mov      $1,%eax
+	ret
+5:	test     %bl,%bl
+	cmovz    %edx,%eax
+	mov      save_ebx(%esp),%ebx
+	add      $16,%esp
+	movq     %xmm0,24(%ecx,%eax,1)
+	mov      $1,%eax
+	ret
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom goes into xmm7.
 	.align   32
 10:	movq     (%ecx,%eax,1),%xmm7
-	movq     8(%ecx,%eax,1),%xmm1
-	movq     %xmm1,(%ecx,%eax,1)
-	movq     %xmm0,8(%ecx,%eax,1)
+	movdqu   8(%ecx,%eax,1),%xmm1
+	movq     24(%ecx,%eax,1),%xmm2
+	movdqa   %xmm1,(%ecx,%eax,1)
+	movq     %xmm2,16(%ecx,%eax,1)
+	movq     %xmm0,24(%ecx,%eax,1)
 
 	// Find the alternative bucket for xmm7 at edx.
 	movd     %xmm7,%edx
 	pextrd   $1,%xmm7,%edi
 	and      %ebx,%edx
 	and      %ebx,%edi
-	shl      $4,%edx
-	shl      $4,%edi
+	shl      $5,%edx
+	shl      $5,%edi
 	cmp      %eax,%edx
 	cmovz    %edi,%edx
 
@@ -145,9 +183,13 @@ FUNC(add4st0sse4)
 	pcmpeqq  %xmm6,%xmm1
 
 	// Check for empty slots and insert.
+	movdqa   16(%ecx,%edx,1),%xmm2
+	pcmpeqq  %xmm1,%xmm2
 	pcmpeqq  (%ecx,%edx,1),%xmm1
-	pmovmskb %xmm1,%eax
-	test     %eax,%eax
+	pmovmskb %xmm2,%eax
+	pmovmskb %xmm1,%edi
+	shl      $16,%eax
+	or       %edi,%eax
 	jnz      12f
 
 	// No free slot at edx.
@@ -182,9 +224,9 @@ FUNC(add4st0sse4)
 	movdqa   %xmm0,m_stash(%ecx)
 	subl     $1,m_cnt(%ecx)
 	movl     $1,m_nstash(%ecx)
-	movl     FPTR(add2st1sse4),m_add(%ecx)
-	movl     FPTR(has2st1sse4),m_has(%ecx)
-	movl     FPTR(del2st1),m_del(%ecx)
+	movl     FPTR(add4st1sse4),m_add(%ecx)
+	movl     FPTR(has4st1sse4),m_has(%ecx)
+	movl     FPTR(del4st1),m_del(%ecx)
 	mov      $1,%eax
 	ret
 END(add4st0sse4)
