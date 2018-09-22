@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <string.h>
 #include <assert.h>
 #include <x86intrin.h>
 #include "fp64set.h"
@@ -72,7 +73,7 @@ void addDups(struct fp64set *set, uint64_t mask, size_t *np, uint64_t *tp)
     *tp = t1 - t0;
 }
 
-#define ITER 12
+static int ITER = 23;
 
 double bench_addUniq(int bsize, int logsize)
 {
@@ -191,24 +192,66 @@ double bench_next(int bsize, int logsize)
     return (double) t / n;
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    printf("add2 uniq %.1f\n", bench_addUniq(2, 10));
-    printf("add3 uniq %.1f\n", bench_addUniq(3, 10));
-    printf("add4 uniq %.1f\n", bench_addUniq(4, 10));
+    int nb = 10;
+    if (argc > 1) {
+	const char *arg1 = argv[1];
+	unsigned char c = *arg1;
+	if (c >= '0' && c <= '9') {
+	    nb = atoi(arg1);
+	    assert(nb >= 3);
+	    assert(nb <= 16); // good rnd bits
+	    argc--, argv++;
+	}
+    }
+    ITER -= nb;
+    bool ALL = argc <= 1;
+    ITER += !ALL;
+    bool b_has2 = ALL, b_has3 = ALL, b_has4 = ALL;
+    bool b_add2u = ALL, b_add3u = ALL, b_add4u = ALL;
+    bool b_add2d = ALL, b_add3d = ALL, b_add4d = ALL;
+    bool b_del2 = ALL, b_del3 = ALL, b_del4 = ALL;
+    bool b_next2 = ALL, b_next3 = ALL, b_next4 = ALL;
+    for (int i = 1; !ALL && i < argc; i++) {
+	if (0) continue;
+	else if (strcmp(argv[i], "has") == 0) b_has2 = b_has3 = b_has4 = 1;
+	else if (strcmp(argv[i], "addu") == 0) b_add2u = b_add3u = b_add4u = 1;
+	else if (strcmp(argv[i], "addd") == 0) b_add2d = b_add3d = b_add4d = 1;
+	else if (strcmp(argv[i], "del") == 0) b_del2 = b_del3 = b_del4 = 1;
+	else if (strcmp(argv[i], "next") == 0) b_next2 = b_next3 = b_next4 = 1;
+	else if (strcmp(argv[i], "has2") == 0) b_has2 = 1;
+	else if (strcmp(argv[i], "has3") == 0) b_has3 = 1;
+	else if (strcmp(argv[i], "has4") == 0) b_has4 = 1;
+	else if (strcmp(argv[i], "add2u") == 0) b_add2u = 1;
+	else if (strcmp(argv[i], "add3u") == 0) b_add3u = 1;
+	else if (strcmp(argv[i], "add4u") == 0) b_add4u = 1;
+	else if (strcmp(argv[i], "add2d") == 0) b_add2d = 1;
+	else if (strcmp(argv[i], "add3d") == 0) b_add3d = 1;
+	else if (strcmp(argv[i], "add4d") == 0) b_add4d = 1;
+	else if (strcmp(argv[i], "del2") == 0) b_del2 = 1;
+	else if (strcmp(argv[i], "del3") == 0) b_del3 = 1;
+	else if (strcmp(argv[i], "del4") == 0) b_del4 = 1;
+	else if (strcmp(argv[i], "next2") == 0) b_next2 = 1;
+	else if (strcmp(argv[i], "next3") == 0) b_next3 = 1;
+	else if (strcmp(argv[i], "next4") == 0) b_next4 = 1;
+    }
+    if (b_add2u) printf("add2 uniq %.2f\n", bench_addUniq(2, nb));
+    if (b_add3u) printf("add3 uniq %.2f\n", bench_addUniq(3, nb));
+    if (b_add4u) printf("add4 uniq %.2f\n", bench_addUniq(4, nb));
     // NB: dups incur extra costs of fmix64.
-    printf("add2 dups %.1f\n", bench_addDups(2, 10));
-    printf("add3 dups %.1f\n", bench_addDups(3, 10));
-    printf("add4 dups %.1f\n", bench_addDups(4, 10));
-    printf("has2 %.1f\n", bench_has(2, 10));
-    printf("has3 %.1f\n", bench_has(3, 10));
-    printf("has4 %.1f\n", bench_has(4, 10));
-    printf("del2 %.1f\n", bench_del(2, 10));
-    printf("del3 %.1f\n", bench_del(3, 10));
-    printf("del4 %.1f\n", bench_del(4, 10));
+    if (b_add2d) printf("add2 dups %.2f\n", bench_addDups(2, nb));
+    if (b_add3d) printf("add3 dups %.2f\n", bench_addDups(3, nb));
+    if (b_add4d) printf("add4 dups %.2f\n", bench_addDups(4, nb));
+    if (b_has2) printf("has2 %.2f\n", bench_has(2, nb));
+    if (b_has3) printf("has3 %.2f\n", bench_has(3, nb));
+    if (b_has4) printf("has4 %.2f\n", bench_has(4, nb));
+    if (b_del2) printf("del2 %.2f\n", bench_del(2, nb));
+    if (b_del3) printf("del3 %.2f\n", bench_del(3, nb));
+    if (b_del4) printf("del4 %.2f\n", bench_del(4, nb));
     // NB: price drops as the fill factor increases.
-    printf("next2 %.1f\n", bench_next(2, 10));
-    printf("next3 %.1f\n", bench_next(3, 10));
-    printf("next4 %.1f\n", bench_next(4, 10));
+    if (b_next2) printf("next2 %.2f\n", bench_next(2, nb));
+    if (b_next3) printf("next3 %.2f\n", bench_next(3, nb));
+    if (b_next4) printf("next4 %.2f\n", bench_next(4, nb));
     return 0;
 }
