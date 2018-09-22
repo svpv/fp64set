@@ -754,6 +754,15 @@ HIDDEN FP64SET_FASTCALL int fp64set_tail3(uint64_t fp, struct set *set)
     return -1;
 }
 
+HIDDEN FP64SET_FASTCALL int fp64set_tail4(uint64_t fp, struct set *set)
+{
+    assert(set->bsize == 4);
+    assert(set->nstash == 2);
+    if (fp64set_resize43(set, fp, 1))
+	return 2;
+    return -1;
+}
+
 static inline bool stashAdd(struct set *set, uint64_t fp, bool nstash, int bsize, bool sse4)
 {
     // No stash yet?
