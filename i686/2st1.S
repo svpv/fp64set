@@ -49,14 +49,17 @@ FUNC(add2st1sse4)
 	pinsrd   $1,%edx,%xmm0
 	and      m_mask(%ecx),%eax
 	and      m_mask(%ecx),%edx
-	mov      m_bb(%ecx),%ecx
+	movdqa   m_stash(%ecx),%xmm7
 	movddup  %xmm0,%xmm0
+	mov      m_bb(%ecx),%ecx
 	shl      $4,%eax
 	shl      $4,%edx
 	movdqa   (%ecx,%eax,1),%xmm1
 	movdqa   (%ecx,%edx,1),%xmm2
+	pcmpeqq  %xmm0,%xmm7
 	pcmpeqq  %xmm0,%xmm1
 	pcmpeqq  %xmm0,%xmm2
+	por      %xmm7,%xmm1
 	por      %xmm2,%xmm1
 	pmovmskb %xmm1,%ecx
 	test     %ecx,%ecx
@@ -169,19 +172,26 @@ FUNC(add2st1sse4)
 	mov      $1,%eax
 	ret
 
-	// Too bad.  By the rivers of Babylon we sat and wept.
-20:	movddup  %xmm0,%xmm0
-	mov      save_ecx(%esp),%ecx
+	// Is there a free slot in the stash?
+20:	mov      save_ecx(%esp),%ecx
+	subl     $1,m_cnt(%ecx)
+	cmpl     $2,m_nstash(%ecx)
+	je       21f
+	movl     $2,m_nstash(%ecx)
+	movq     %xmm0,m_stash_1(%ecx)
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
 	add      $16,%esp
-	movdqa   %xmm0,m_stash(%ecx)
-	subl     $1,m_cnt(%ecx)
-	movl     $1,m_nstash(%ecx)
-	movl     FPTR(add2st1sse4),m_add(%ecx)
-	movl     FPTR(has2st1sse4),m_has(%ecx)
-	movl     FPTR(del2st1),m_del(%ecx)
 	mov      $1,%eax
 	ret
+
+	// Nope, making a tail call to the C routine.
+21:	movd     %xmm0,%eax
+	pextrd   $1,%xmm0,%edx
+	mov      save_ebx(%esp),%ebx
+	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
+	add      $16,%esp
+	jmp      NAME(tail2)
 END(add2st1sse4)

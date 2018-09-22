@@ -32,6 +32,7 @@
 	.size      NAME(name),.-NAME(name)
 
 #define m_stash    0
+#define m_stash_1  8
 #define m_add      16
 #define m_del      20
 #define m_has      24
