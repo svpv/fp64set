@@ -19,20 +19,21 @@
 // SOFTWARE.
 
 FUNC(has2st0sse4)
-	movd     %eax,%xmm0
-	pinsrd   $1,%edx,%xmm0
-	and      m_mask(%ecx),%eax
-	and      m_mask(%ecx),%edx
-	mov      m_bb(%ecx),%ecx
+	HAS_REGS
+	movd     reg_lo,%xmm0
+	pinsrd   $1,reg_hi,%xmm0
+	and      m_mask(reg_ptr),reg_lo
+	and      m_mask(reg_ptr),reg_hi
+	mov      m_bb(reg_ptr),reg_ptr
 	movddup  %xmm0,%xmm0
-	shl      $4,%eax
-	shl      $4,%edx
-	movdqa   (%ecx,%eax,1),%xmm1
+	shl      $4,reg_lo
+	shl      $4,reg_hi
+	movdqa   (reg_ptr,reg_lo,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (%ecx,%edx,1),%xmm0
-	por      %xmm1,%xmm0
-	pmovmskb %xmm0,%eax
-	ret
+	pcmpeqq  (reg_ptr,reg_hi,1),%xmm0
+	por      %xmm0,%xmm1
+	pmovmskb %xmm1,%eax
+	HAS_RET
 END(has2st0sse4)
 
 FUNC(add2st0sse4)

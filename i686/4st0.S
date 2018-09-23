@@ -19,26 +19,27 @@
 // SOFTWARE.
 
 FUNC(has4st0sse4)
-	movd     %eax,%xmm0
-	pinsrd   $1,%edx,%xmm0
-	and      m_mask(%ecx),%eax
-	and      m_mask(%ecx),%edx
-	mov      m_bb(%ecx),%ecx
+	HAS_REGS
+	movd     reg_lo,%xmm0
+	pinsrd   $1,reg_hi,%xmm0
+	and      m_mask(reg_ptr),reg_lo
+	and      m_mask(reg_ptr),reg_hi
+	mov      m_bb(reg_ptr),reg_ptr
 	movddup  %xmm0,%xmm0
-	shl      $5,%eax
-	shl      $5,%edx
-	movdqa   (%ecx,%eax,1),%xmm1
-	movdqa   (%ecx,%edx,1),%xmm2
+	shl      $4,reg_lo
+	shl      $4,reg_hi
+	movdqa   (reg_ptr,reg_lo,1),%xmm1
+	movdqa   (reg_ptr,reg_hi,1),%xmm2
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   16(%ecx,%eax,1),%xmm3
+	movdqa   16(reg_ptr,reg_lo,1),%xmm3
 	pcmpeqq  %xmm0,%xmm2
 	pcmpeqq  %xmm0,%xmm3
 	por      %xmm2,%xmm1
-	pcmpeqq  16(%ecx,%edx,1),%xmm0
+	pcmpeqq  16(reg_ptr,reg_hi,1),%xmm0
 	por      %xmm3,%xmm1
 	por      %xmm0,%xmm1
 	pmovmskb %xmm1,%eax
-	ret
+	HAS_RET
 END(has4st0sse4)
 
 FUNC(add4st0sse4)

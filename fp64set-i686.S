@@ -43,6 +43,26 @@
 #define m_logsize  44
 #define m_bsize    48
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define MSFASTCALL 1
+#else
+#define MSFASTCALL 0
+#endif
+
+#if MSFASTCALL
+#define r_lo       %ecx
+#define r_hi       %edx
+#define r_ptr      %eax
+#define HAS_REGS   mov 4(%esp),r_ptr
+#define HAS_RET    ret $4
+#else // REGPARM3
+#define r_lo       %eax
+#define r_hi       %edx
+#define r_ptr      %ecx
+#define HAS_REGS
+#define HAS_RET    ret
+#endif
+
 #include "i686/2st0.S"
 #include "i686/2st1.S"
 #include "i686/3st0.S"
