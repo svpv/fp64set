@@ -32,16 +32,10 @@
 	.size      NAME(name),.-NAME(name)
 
 #define m_stash    0
-#define m_stash_1  8
-#define m_add      16
-#define m_del      20
-#define m_has      24
 #define m_mask     28
 #define m_bb       32
 #define m_cnt      36
-#define m_nstash   40
 #define m_logsize  44
-#define m_bsize    48
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define MSFASTCALL 1

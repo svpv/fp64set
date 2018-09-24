@@ -70,13 +70,15 @@ FUNC(add4st0sse4)
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%ecx
 	test     %ecx,%ecx
-	jz       1f
+	jz       NAME(insert4sse4)
 	add      $16,%esp
 	xor      %eax,%eax
 	ret
+END(add4st0sse4)
 
+FUNC(insert4sse4)
 	// Strategically bump set->cnt.
-1:	mov      save_ecx(%esp),%ecx
+	mov      save_ecx(%esp),%ecx
 	addl     $1,m_cnt(%ecx)
 	mov      m_bb(%ecx),%ecx
 	mov      %ebx,save_ebx(%esp)
@@ -201,8 +203,15 @@ FUNC(add4st0sse4)
 	sub      $1,%esi
 	jge      10b
 
-	// Broke out of the loop.
-	jmp      20f
+	// Broke out of the loop.  Too bad.
+	mov      save_ecx(%esp),%ecx
+	mov      save_ebx(%esp),%ebx
+	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
+	add      $16,%esp
+	movd     %xmm0,%eax
+	pextrd   $1,%xmm0,%edx
+	jmp      NAME(insert4tail)
 
 	// Successful kickAdd() lands here.
 12:	bsf      %eax,%eax
@@ -214,20 +223,4 @@ FUNC(add4st0sse4)
 	add      $16,%esp
 	mov      $1,%eax
 	ret
-
-	// Too bad.  By the rivers of Babylon we sat and wept.
-20:	movddup  %xmm0,%xmm0
-	mov      save_ecx(%esp),%ecx
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
-	add      $16,%esp
-	movdqa   %xmm0,m_stash(%ecx)
-	subl     $1,m_cnt(%ecx)
-	movl     $1,m_nstash(%ecx)
-	movl     FPTR(add4st1sse4),m_add(%ecx)
-	movl     FPTR(has4st1sse4),m_has(%ecx)
-	movl     FPTR(del4st1),m_del(%ecx)
-	mov      $1,%eax
-	ret
-END(add4st0sse4)
+END(insert4sse4)

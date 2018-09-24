@@ -736,29 +736,48 @@ static bool fp64set_resize43(struct set *set, uint64_t fp, bool sse4)
     return true;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_tail2(uint64_t fp, struct set *set)
+static inline bool t_stash(struct set *set, uint64_t fp, int bsize)
 {
-    assert(set->bsize == 2);
+    assert(set->bsize == bsize);
+    set->cnt--;
+    if (set->nstash == 0) {
+	set->nstash = 1;
+	set->stash[0] = set->stash[1] = fp;
+	SelectVFuncs(set, bsize, 1, cpu_supports_sse4);
+	return true;
+    }
+    if (set->nstash == 1) {
+	set->nstash = 2;
+	set->stash[1] = fp;
+	return true;
+    }
     assert(set->nstash == 2);
-    if (fp64set_resize23(set, fp, 1))
+    return false;
+}
+
+HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(uint64_t fp, struct set *set)
+{
+    if (t_stash(set, fp, 2))
+	return 1;
+    if (fp64set_resize23(set, fp, cpu_supports_sse4))
 	return 2;
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_tail3(uint64_t fp, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(uint64_t fp, struct set *set)
 {
-    assert(set->bsize == 3);
-    assert(set->nstash == 2);
-    if (fp64set_resize34(set, fp, 1))
+    if (t_stash(set, fp, 3))
+	return 1;
+    if (fp64set_resize34(set, fp, cpu_supports_sse4))
 	return 2;
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_tail4(uint64_t fp, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(uint64_t fp, struct set *set)
 {
-    assert(set->bsize == 4);
-    assert(set->nstash == 2);
-    if (fp64set_resize43(set, fp, 1))
+    if (t_stash(set, fp, 4))
+	return 1;
+    if (fp64set_resize43(set, fp, cpu_supports_sse4))
 	return 2;
     return -1;
 }
