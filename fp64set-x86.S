@@ -57,32 +57,6 @@
 #define HAS_RET    ret
 #endif
 
-#include "i686/2st0.S"
-#include "i686/2st1.S"
-#include "i686/3st0.S"
-#include "i686/3st1.S"
-#include "i686/4st0.S"
-#include "i686/4st1.S"
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 FUNC(has2st0sse4)
 	HAS_REGS
 	movd     r_lo,%xmm0
@@ -241,53 +215,9 @@ FUNC(insert2sse4)
 	mov      $1,%eax
 	ret
 END(insert2sse4)
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-FUNC(has2st1sse4)
-	HAS_REGS
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm7
-	movddup  %xmm0,%xmm0
-	mov      m_bb(r_ptr),r_ptr
-	shl      $4,r_lo
-	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (r_ptr,r_hi,1),%xmm0
-	por      %xmm7,%xmm0
-	por      %xmm0,%xmm1
-	pmovmskb %xmm1,%eax
-	HAS_RET
-END(has2st1sse4)
 
 FUNC(add2st1sse4)
 	sub      $16,%esp
-#define save_ecx 0
-#define save_ebx 4
-#define save_esi 8
-#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -312,25 +242,27 @@ FUNC(add2st1sse4)
 	xor      %eax,%eax
 	ret
 END(add2st1sse4)
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+
+FUNC(has2st1sse4)
+	HAS_REGS
+	movd     r_lo,%xmm0
+	pinsrd   $1,r_hi,%xmm0
+	and      m_mask(r_ptr),r_lo
+	and      m_mask(r_ptr),r_hi
+	movdqa   m_stash(r_ptr),%xmm7
+	movddup  %xmm0,%xmm0
+	mov      m_bb(r_ptr),r_ptr
+	shl      $4,r_lo
+	shl      $4,r_hi
+	movdqa   (r_ptr,r_lo,1),%xmm1
+	pcmpeqq  %xmm0,%xmm7
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  (r_ptr,r_hi,1),%xmm0
+	por      %xmm7,%xmm0
+	por      %xmm0,%xmm1
+	pmovmskb %xmm1,%eax
+	HAS_RET
+END(has2st1sse4)
 
 FUNC(has3st0sse4)
 	HAS_REGS
@@ -357,10 +289,6 @@ END(has3st0sse4)
 
 FUNC(add3st0sse4)
 	sub      $16,%esp
-#define save_ecx 0
-#define save_ebx 4
-#define save_esi 8
-#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -520,58 +448,9 @@ FUNC(insert3sse4)
 	mov      $1,%eax
 	ret
 END(insert3sse4)
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-FUNC(has3st1sse4)
-	HAS_REGS
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm7
-	movddup  %xmm0,%xmm0
-	mov      m_bb(r_ptr),r_ptr
-	lea      (r_lo,r_lo,2),r_lo
-	lea      (r_hi,r_hi,2),r_hi
-	movdqu   8(r_ptr,r_lo,8),%xmm1
-	movdqu   8(r_ptr,r_hi,8),%xmm2
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	por      %xmm7,%xmm1
-	movq     (r_ptr,r_lo,8),%xmm3
-	movhps   (r_ptr,r_hi,8),%xmm3
-	pcmpeqq  %xmm0,%xmm3
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
-	pmovmskb %xmm1,%eax
-	HAS_RET
-END(has3st1sse4)
 
 FUNC(add3st1sse4)
 	sub      $16,%esp
-#define save_ecx 0
-#define save_ebx 4
-#define save_esi 8
-#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -600,25 +479,32 @@ FUNC(add3st1sse4)
 	xor      %eax,%eax
 	ret
 END(add3st1sse4)
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+
+FUNC(has3st1sse4)
+	HAS_REGS
+	movd     r_lo,%xmm0
+	pinsrd   $1,r_hi,%xmm0
+	and      m_mask(r_ptr),r_lo
+	and      m_mask(r_ptr),r_hi
+	movdqa   m_stash(r_ptr),%xmm7
+	movddup  %xmm0,%xmm0
+	mov      m_bb(r_ptr),r_ptr
+	lea      (r_lo,r_lo,2),r_lo
+	lea      (r_hi,r_hi,2),r_hi
+	movdqu   8(r_ptr,r_lo,8),%xmm1
+	movdqu   8(r_ptr,r_hi,8),%xmm2
+	pcmpeqq  %xmm0,%xmm7
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %xmm0,%xmm2
+	por      %xmm7,%xmm1
+	movq     (r_ptr,r_lo,8),%xmm3
+	movhps   (r_ptr,r_hi,8),%xmm3
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
+	HAS_RET
+END(has3st1sse4)
 
 FUNC(has4st0sse4)
 	HAS_REGS
@@ -646,10 +532,6 @@ END(has4st0sse4)
 
 FUNC(add4st0sse4)
 	sub      $16,%esp
-#define save_ecx 0
-#define save_ebx 4
-#define save_esi 8
-#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -826,62 +708,9 @@ FUNC(insert4sse4)
 	mov      $1,%eax
 	ret
 END(insert4sse4)
-// Copyright (c) 2018 Alexey Tourbin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-FUNC(has4st1sse4)
-	HAS_REGS
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	movdqa   m_stash(r_ptr),%xmm7
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
-	shl      $4,r_lo
-	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	movdqa   16(r_ptr,r_lo,1),%xmm3
-	movdqa   16(r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm7,%xmm1
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
-	por      %xmm4,%xmm1
-	pmovmskb %xmm1,%eax
-	HAS_RET
-END(has4st1sse4)
 
 FUNC(add4st1sse4)
 	sub      $16,%esp
-#define save_ecx 0
-#define save_ebx 4
-#define save_esi 8
-#define save_edi 12
 	mov      %ecx,save_ecx(%esp)
 	movd     %eax,%xmm0
 	pinsrd   $1,%edx,%xmm0
@@ -912,3 +741,33 @@ FUNC(add4st1sse4)
 	xor      %eax,%eax
 	ret
 END(add4st1sse4)
+
+FUNC(has4st1sse4)
+	HAS_REGS
+	movd     r_lo,%xmm0
+	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%xmm0
+	pinsrd   $1,r_hi,%xmm0
+	movdqa   m_stash(r_ptr),%xmm7
+	and      m_mask(r_ptr),r_lo
+	and      m_mask(r_ptr),r_hi
+	mov      m_bb(r_ptr),r_ptr
+	movddup  %xmm0,%xmm0
+	shl      $4,r_lo
+	shl      $4,r_hi
+	movdqa   (r_ptr,r_lo,1),%xmm1
+	movdqa   (r_ptr,r_hi,1),%xmm2
+	pcmpeqq  %xmm0,%xmm7
+	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %xmm0,%xmm2
+	movdqa   16(r_ptr,r_lo,1),%xmm3
+	movdqa   16(r_ptr,r_hi,1),%xmm4
+	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  %xmm0,%xmm4
+	por      %xmm7,%xmm1
+	por      %xmm2,%xmm1
+	por      %xmm3,%xmm1
+	por      %xmm4,%xmm1
+	pmovmskb %xmm1,%eax
+	HAS_RET
+END(has4st1sse4)
