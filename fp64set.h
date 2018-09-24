@@ -19,6 +19,7 @@
 // SOFTWARE.
 
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -33,10 +34,31 @@ extern "C" {
 struct fp64set *fp64set_new(int logsize);
 void fp64set_free(struct fp64set *set);
 
-#ifdef __i386__
+// i386 convention: on Windows, stick to fastcall, for compatibility with msvc.
+#if (defined(_WIN32) || defined(__CYGWIN__)) && \
+    (defined(_M_IX86) || defined(__i386__))
+#define FP64SET_MSFASTCALL 1
+#if defined(__GNUC__)
+#define FP64SET_FASTCALL __attribute__((fastcall))
+#else
+#define FP64SET_FASTCALL __fastcall
+#endif
+#else // otherwise, use regparm(3).
+#define FP64SET_MSFASTCALL 0
+#if defined(__i386__)
 #define FP64SET_FASTCALL __attribute__((regparm(3)))
 #else
 #define FP64SET_FASTCALL
+#endif
+#endif
+
+// fastcall has trouble passing uint64_t in registers.
+#if FP64SET_MSFASTCALL
+#define FP64SET_pFP64 uint32_t lo, uint32_t hi
+#define FP64SET_aFP64(fp) fp, fp >> 32
+#else
+#define FP64SET_pFP64 uint64_t fp
+#define FP64SET_aFP64(fp) fp
 #endif
 
 // Exposes only a part of the structure, just enough to inline the calls.
@@ -44,10 +66,10 @@ struct fp64set {
     // This guy needs to be 16-byte aligned, have to expose it.
     uint64_t stash[2];
     // Pass fp first, eax:edx may hold hash() return value.
-    int (*add)(uint64_t fp, void *set) FP64SET_FASTCALL;
-    bool (*del)(uint64_t fp, void *set) FP64SET_FASTCALL;
+    int (FP64SET_FASTCALL *add)(FP64SET_pFP64, void *set);
+    bool (FP64SET_FASTCALL *del)(FP64SET_pFP64, void *set);
     // Returns int, let the caller booleanize (can be optimized out).
-    int (*has)(uint64_t fp, const void *set) FP64SET_FASTCALL;
+    int (FP64SET_FASTCALL *has)(FP64SET_pFP64, const void *set);
 };
 
 // Add a 64-bit fingerprint to the set.  Returns 0 for a previously added
@@ -62,19 +84,19 @@ struct fp64set {
 // of this kind of failure decreases exponentially with logsize.
 static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 {
-    return set->add(fp, set);
+    return set->add(FP64SET_aFP64(fp), set);
 }
 
 // Delete a fingerprint from a set, returns false if not found.
 static inline bool fp64set_del(struct fp64set *set, uint64_t fp)
 {
-    return set->del(fp, set);
+    return set->del(FP64SET_aFP64(fp), set);
 }
 
 // Check if a fingerprint is in the set.
 static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
-    return set->has(fp, set);
+    return set->has(FP64SET_aFP64(fp), set);
 }
 
 // Iterate the fingerprints in a set.  iter should be initialized with zero;
@@ -87,7 +109,7 @@ static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 // non-last fingerprint is deleted, the caller should still decrement the
 // iterator, and the next call may return the same fingerprint again (because
 // fingerprints are moved down in a different bucket).
-FP64SET_FASTCALL const uint64_t *fp64set_next(const struct fp64set *set,
+const uint64_t *FP64SET_FASTCALL fp64set_next(const struct fp64set *set,
 					      size_t *iter);
 
 #ifdef __cplusplus
