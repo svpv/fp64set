@@ -32,44 +32,56 @@
 #define m_bb     48
 #define m_stash  0
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define MSABI    1
+#else
+#define MSABI    0
+#endif
+
+#if MSABI
+#define r_fp     %rcx
+#define r_ptr    %rdx
+#else
+#define r_fp     %rdi
+#define r_ptr    %rsi
+#endif
+
 FUNC(has2st0sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	shl      $4,%rdx
-	shl      $4,%rdi
-	pshufd   $0x44,%xmm0,%xmm0
-	movdqa   (%rcx,%rdx,1),%xmm1
+	mov      r_fp,%rax
+	movq     r_fp,%xmm0
+	shr      $32,%rax
+	and      m_mask(r_ptr),r_fp
+	and      m_mask(r_ptr),%rax
+	mov      m_bb(r_ptr),%r11
+	shl      $4,r_fp
+	movddup  %xmm0,%xmm0
+	movdqa   (%r11,r_fp,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (%rcx,%rdi,1),%xmm0
-	por      %xmm1,%xmm0
-	pmovmskb %xmm0,%eax
+	shl      $4,%rax
+	pcmpeqq  (%r11,%rax,1),%xmm0
+	por      %xmm0,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has2st0sse4)
 
 FUNC(has2st1sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	shl      $4,%rdx
-	shl      $4,%rdi
-	pshufd   $0x44,%xmm0,%xmm0
-	movdqa   (%rcx,%rdx,1),%xmm1
+	mov      r_fp,%rax
+	movq     r_fp,%xmm0
+	shr      $32,%rax
+	and      m_mask(r_ptr),r_fp
+	and      m_mask(r_ptr),%rax
+	mov      m_bb(r_ptr),%r11
+	shl      $4,r_fp
+	movddup  %xmm0,%xmm0
+	movdqa   (%r11,r_fp,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%rcx,%rdi,1),%xmm2
+	movdqa   m_stash(r_ptr),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	pcmpeqq  m_stash(%rsi),%xmm0
-	por      %xmm2,%xmm0
-	pmovmskb %xmm0,%eax
+	shl      $4,%rax
+	pcmpeqq  (%r11,%rax,1),%xmm0
+	por      %xmm2,%xmm1
+	por      %xmm0,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has2st1sse4)
 
