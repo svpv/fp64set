@@ -96,7 +96,20 @@ static inline bool fp64set_del(struct fp64set *set, uint64_t fp)
 // Check if a fingerprint is in the set.
 static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
+#if defined(__GNUC__) && defined(__x86_64__)
+    int ret;
+    asm("callq *%c3(%2)"
+#if defined(_WIN32) || defined(__CYGWIN__)
+	: "=a" (ret), "+c" (fp) : "d" (set),
+#else
+	: "=a" (ret), "+D" (fp) : "S" (set),
+#endif
+	  "i" (offsetof(struct fp64set, has))
+	: "cc", "r11", "xmm0", "xmm1", "xmm2", "xmm3");
+    return ret;
+#else
     return set->has(FP64SET_aFP64(fp), set);
+#endif
 }
 
 // Iterate the fingerprints in a set.  iter should be initialized with zero;
