@@ -136,54 +136,54 @@ FUNC(has3st1sse4)
 END(has3st1sse4)
 
 FUNC(has4st0sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	shl      $5,%rdx
-	shl      $5,%rdi
-	pshufd   $0x44,%xmm0,%xmm0
-	movdqa   (%rcx,%rdx,1),%xmm1
+	mov      m_mask(r_ptr),%rax
+	mov      %rax,%r11
+	and      r_fp,%r11
+	movq     r_fp,%xmm0
+	shr      $32,r_fp
+	and      %rax,r_fp
+	mov      m_bb(r_ptr),%rax
+	shl      $5,%r11
+	shl      $5,r_fp
+	movddup  %xmm0,%xmm0
+	movdqa   (%rax,%r11,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%rcx,%rdi,1),%xmm2
+	movdqa   (%rax,r_fp,1),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	movdqa   16(%rcx,%rdx,1),%xmm3
+	por      %xmm2,%xmm1
+	movdqa   16(%rax,%r11,1),%xmm3
 	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  16(%rcx,%rdi,1),%xmm0
-	por      %xmm1,%xmm2
-	por      %xmm3,%xmm0
-	por      %xmm2,%xmm0
-	pmovmskb %xmm0,%eax
+	pcmpeqq  16(%rax,r_fp,1),%xmm0
+	por      %xmm0,%xmm1
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has4st0sse4)
 
 FUNC(has4st1sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	shl      $5,%rdx
-	shl      $5,%rdi
-	pshufd   $0x44,%xmm0,%xmm0
-	movdqa   (%rcx,%rdx,1),%xmm1
+	mov      m_mask(r_ptr),%rax
+	mov      %rax,%r11
+	and      r_fp,%r11
+	movq     r_fp,%xmm0
+	shr      $32,r_fp
+	and      %rax,r_fp
+	mov      m_bb(r_ptr),%rax
+	shl      $5,%r11
+	shl      $5,r_fp
+	movddup  %xmm0,%xmm0
+	movdqa   (%rax,%r11,1),%xmm1
 	pcmpeqq  %xmm0,%xmm1
-	movdqa   (%rcx,%rdi,1),%xmm2
+	movdqa   (%rax,r_fp,1),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	movdqa   m_stash(%rsi),%xmm1
-	pcmpeqq  %xmm0,%xmm1
-	movdqa   16(%rcx,%rdx,1),%xmm3
+	por      %xmm2,%xmm1
+	movdqa   m_stash(r_ptr),%xmm3
 	pcmpeqq  %xmm0,%xmm3
-	por      %xmm1,%xmm3
-	por      %xmm2,%xmm3
-	pcmpeqq  16(%rcx,%rdi,1),%xmm0
-	por      %xmm3,%xmm0
-	pmovmskb %xmm0,%eax
+	movdqa   16(%rax,%r11,1),%xmm2
+	pcmpeqq  %xmm0,%xmm2
+	por      %xmm3,%xmm2
+	pcmpeqq  16(%rax,r_fp,1),%xmm0
+	por      %xmm0,%xmm1
+	por      %xmm2,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has4st1sse4)
