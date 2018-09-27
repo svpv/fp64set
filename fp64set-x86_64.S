@@ -86,54 +86,52 @@ FUNC(has2st1sse4)
 END(has2st1sse4)
 
 FUNC(has3st0sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	lea      (%rdx,%rdx,2),%rax
-	lea      (%rdi,%rdi,2),%rdx
-	movdqu   (%rcx,%rax,8),%xmm1
-	movdqu   (%rcx,%rdx,8),%xmm2
-	pshufd   $0x44,%xmm0,%xmm0
-	movq     16(%rcx,%rax,8),%xmm3
-	movq     16(%rcx,%rdx,8),%xmm4
-	punpcklqdq %xmm3,%xmm4
+	mov      m_mask(r_ptr),%rax
+	mov      %rax,%r11
+	and      r_fp,%r11
+	movq     r_fp,%xmm0
+	shr      $32,r_fp
+	and      %rax,r_fp
+	mov      m_bb(r_ptr),%rax
+	lea      (%r11,%r11,2),%r11
+	lea      (r_fp,r_fp,2),r_fp
+	movddup  %xmm0,%xmm0
+	movdqu   8(%rax,%r11,8),%xmm1
 	pcmpeqq  %xmm0,%xmm1
+	movdqu   8(%rax,r_fp,8),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	por      %xmm1,%xmm2
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm2,%xmm4
-	pmovmskb %xmm4,%eax
+	movq     (%rax,r_fp,8),%xmm3
+	movhps   (%rax,%r11,8),%xmm3
+	pcmpeqq  %xmm0,%xmm3
+	por      %xmm3,%xmm1
+	por      %xmm2,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has3st0sse4)
 
 FUNC(has3st1sse4)
-	mov      m_mask(%rsi),%rax
-	mov      m_bb(%rsi),%rcx
-	mov      %rax,%rdx
-	and      %rdi,%rdx
-	movq     %rdi,%xmm0
-	shr      $32,%rdi
-	and      %rax,%rdi
-	lea      (%rdx,%rdx,2),%rax
-	lea      (%rdi,%rdi,2),%rdx
-	movdqu   (%rcx,%rax,8),%xmm1
-	movdqu   (%rcx,%rdx,8),%xmm2
-	pshufd   $0x44,%xmm0,%xmm0
-	movq     16(%rcx,%rax,8),%xmm3
-	movq     16(%rcx,%rdx,8),%xmm4
-	punpcklqdq %xmm3,%xmm4
+	mov      m_mask(r_ptr),%rax
+	mov      %rax,%r11
+	and      r_fp,%r11
+	movq     r_fp,%xmm0
+	shr      $32,r_fp
+	and      %rax,r_fp
+	mov      m_bb(r_ptr),%rax
+	lea      (%r11,%r11,2),%r11
+	lea      (r_fp,r_fp,2),r_fp
+	movddup  %xmm0,%xmm0
+	movdqu   8(%rax,%r11,8),%xmm1
 	pcmpeqq  %xmm0,%xmm1
+	movdqu   8(%rax,r_fp,8),%xmm2
 	pcmpeqq  %xmm0,%xmm2
-	pcmpeqq  %xmm0,%xmm4
-	pcmpeqq  m_stash(%rsi),%xmm0
-	por      %xmm1,%xmm2
-	por      %xmm2,%xmm0
-	por      %xmm4,%xmm0
-	pmovmskb %xmm0,%eax
+	movq     (%rax,r_fp,8),%xmm3
+	movhps   (%rax,%r11,8),%xmm3
+	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  m_stash(r_ptr),%xmm0
+	por      %xmm0,%xmm1
+	por      %xmm2,%xmm3
+	por      %xmm3,%xmm1
+	pmovmskb %xmm1,%eax
 	retq
 END(has3st1sse4)
 
