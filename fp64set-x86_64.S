@@ -22,7 +22,7 @@
 	.global  fp64set_##name; \
 	.hidden  fp64set_##name; \
 	.type    fp64set_##name,@function; \
-	.align   16; \
+	.align   32; \
 	fp64set_##name: \
 
 #define END(name) \
