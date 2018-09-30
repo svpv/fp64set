@@ -752,8 +752,17 @@ static inline bool t_stash(struct set *set, uint64_t fp, int bsize)
     return false;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(uint64_t fp, struct set *set)
+#if FP64SET_MSFASTCALL
+#define LOHI2FP lo | (uint64_t) hi << 32
+#define dFP uint64_t fp = LOHI2FP
+#else
+#define LOHI2FP fp
+#define dFP (void)0
+#endif
+
+HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(FP64SET_pFP64, struct set *set)
 {
+    dFP;
     if (t_stash(set, fp, 2))
 	return 1;
     if (fp64set_resize23(set, fp, cpu_supports_sse4))
@@ -761,8 +770,9 @@ HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(uint64_t fp, struct set *set)
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(uint64_t fp, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(FP64SET_pFP64, struct set *set)
 {
+    dFP;
     if (t_stash(set, fp, 3))
 	return 1;
     if (fp64set_resize34(set, fp, cpu_supports_sse4))
@@ -770,8 +780,9 @@ HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(uint64_t fp, struct set *set)
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(uint64_t fp, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(FP64SET_pFP64, struct set *set)
 {
+    dFP;
     if (t_stash(set, fp, 4))
 	return 1;
     if (fp64set_resize43(set, fp, cpu_supports_sse4))
@@ -922,12 +933,6 @@ FP64SET_FASTCALL const uint64_t *fp64set_next(const struct fp64set *arg, size_t 
     struct set *set = (void *) arg;
     return t_next(set, iter, set->nstash, set->bsize);
 }
-
-#if FP64SET_MSFASTCALL
-#define LOHI2FP lo | (uint64_t) hi << 32
-#else
-#define LOHI2FP fp
-#endif
 
 #undef MakeVFuncs
 #define MakeVFuncs(NB, ST) \
