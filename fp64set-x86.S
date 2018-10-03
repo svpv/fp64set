@@ -122,27 +122,30 @@ FUNC(insert2sse4)
 	mov      m_bb(r_ptr),r_ptr
 	mov      %ebx,save_ebx(%esp)
 
-	// Blank values for b1[*] + b2[*] -> xmm3.
+	// Blank values for b1[*] -> xmm3.
 	movd     r_lo,%xmm3
-	pinsrd   $2,r_hi,%xmm3
 	pxor     %xmm6,%xmm6
+	movddup  %xmm3,%xmm3
 	pcmpeqq  %xmm6,%xmm3
 
-	// Load b1[0] + b2[0], check for a free slot.
-	movq     (r_ptr,r_lo,1),%xmm1
-	movhps   (r_ptr,r_hi,1),%xmm1
+	// Check for free slots in b1[*] -> xmm1.
+	movdqa   (r_ptr,r_lo,1),%xmm1
 	pcmpeqq  %xmm3,%xmm1
-	pmovmskb %xmm1,%ebx
-	test     %ebx,%ebx
-	jnz      2f
 
-	// Load b1[1] + b2[1], check for a free slot.
-	movq     8(r_ptr,r_lo,1),%xmm1
-	movhps   8(r_ptr,r_hi,1),%xmm1
-	pcmpeqq  %xmm3,%xmm1
+	// Blank values for b2[*] -> xmm3.
+	movd     r_hi,%xmm3
+	movddup  %xmm3,%xmm3
+	pcmpeqq  %xmm6,%xmm3
+
+	// Check for free slots in b1[*] -> xmm2.
+	movdqa   (r_ptr,r_hi,1),%xmm2
+	pcmpeqq  %xmm3,%xmm2
+
+	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
+	pblendw  $0xcc,%xmm2,%xmm1
 	pmovmskb %xmm1,%ebx
 	test     %ebx,%ebx
-	jnz      3f
+	jnz      1f
 
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
@@ -154,18 +157,16 @@ FUNC(insert2sse4)
 	jmp      10f
 
 	// Successful justAdd() lands here.
-2:	test     %bl,%bl
-	cmovz    r_hi,r_lo
+1:	bsf      %ebx,%ebx
+	// Is it b1[] or b2[]? bsf returns 0, 4, 8, or 12.
+	test     $4,%ebx
+	cmovnz   r_hi,r_lo
+	// Is it [0] or [1]?
+	shr      $3,%ebx
+	lea      (r_lo,%ebx,8),r_lo
 	mov      save_ebx(%esp),%ebx
 	FREE
 	movq     %xmm0,(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
-3:	test     %bl,%bl
-	cmovz    r_hi,r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
-	movq     %xmm0,8(r_ptr,r_lo,1)
 	mov      $1,%eax
 	RET
 
