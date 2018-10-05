@@ -102,12 +102,14 @@ FUNC(add2st0sse4)
 	movddup  %xmm0,%xmm0
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	por      %xmm2,%xmm1
-	pmovmskb %xmm1,r_ptr
+	movdqa   (r_ptr,r_lo,1),%xmm3
+	movdqa   (r_ptr,r_hi,1),%xmm4
+	movdqa   %xmm3,%xmm1
+	pcmpeqq  %xmm0,%xmm3
+	movdqa   %xmm4,%xmm2
+	pcmpeqq  %xmm0,%xmm4
+	por      %xmm4,%xmm3
+	pmovmskb %xmm3,r_ptr
 	test     r_ptr,r_ptr
 	jz       NAME(insert2sse4)
 	FREE
@@ -129,7 +131,6 @@ FUNC(insert2sse4)
 	pcmpeqq  %xmm6,%xmm3
 
 	// Check for free slots in b1[*] -> xmm1.
-	movdqa   (r_ptr,r_lo,1),%xmm1
 	pcmpeqq  %xmm3,%xmm1
 
 	// Blank values for b2[*] -> xmm3.
@@ -137,8 +138,7 @@ FUNC(insert2sse4)
 	movddup  %xmm3,%xmm3
 	pcmpeqq  %xmm6,%xmm3
 
-	// Check for free slots in b1[*] -> xmm2.
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	// Check for free slots in b2[*] -> xmm2.
 	pcmpeqq  %xmm3,%xmm2
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
@@ -242,14 +242,16 @@ FUNC(add2st1sse4)
 	mov      m_bb(r_ptr),r_ptr
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   (r_ptr,r_lo,1),%xmm3
+	movdqa   (r_ptr,r_hi,1),%xmm4
 	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	por      %xmm7,%xmm1
-	por      %xmm2,%xmm1
-	pmovmskb %xmm1,r_ptr
+	movdqa   %xmm3,%xmm1
+	pcmpeqq  %xmm0,%xmm3
+	movdqa   %xmm4,%xmm2
+	pcmpeqq  %xmm0,%xmm4
+	por      %xmm7,%xmm3
+	por      %xmm4,%xmm3
+	pmovmskb %xmm3,r_ptr
 	test     r_ptr,r_ptr
 	jz       NAME(insert2sse4)
 	FREE
