@@ -151,9 +151,9 @@ FUNC(insert2sse4)
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
 	mov      save_ptr(%esp),%ebx
-	mov      m_logsize(%ebx),%esi
-	shl      $1,%esi
-	mov      m_mask(%ebx),%ebx
+	mov      m_mask(%ebx),%esi
+	mov      m_logsize(%ebx),%edi
+	shl      $1,%edi
 	jmp      10f
 
 	// Successful justAdd() lands here.
@@ -180,13 +180,13 @@ FUNC(insert2sse4)
 
 	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
-	pextrd   $1,%xmm7,%edi
-	and      %ebx,r_hi
-	and      %ebx,%edi
+	pextrd   $1,%xmm7,%ebx
+	and      %esi,r_hi
+	and      %esi,%ebx
 	shl      $4,r_hi
-	shl      $4,%edi
+	shl      $4,%ebx
 	cmp      r_lo,r_hi
-	cmovz    %edi,r_hi
+	cmove    %ebx,r_hi
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
@@ -195,8 +195,8 @@ FUNC(insert2sse4)
 
 	// Check for empty slots and insert.
 	pcmpeqq  (r_ptr,r_hi,1),%xmm1
-	pmovmskb %xmm1,r_lo
-	test     r_lo,r_lo
+	pmovmskb %xmm1,%ebx
+	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
@@ -204,7 +204,7 @@ FUNC(insert2sse4)
 	mov      r_hi,r_lo
 
 	// Loop control.
-	sub      $1,%esi
+	sub      $1,%edi
 	jge      10b
 
 	// Broke out of the loop.  Too bad.
@@ -218,8 +218,8 @@ FUNC(insert2sse4)
 	jmp      NAME(insert2tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      r_lo,r_lo
-	add      r_lo,r_hi
+12:	bsf      %ebx,%ebx
+	add      %ebx,r_hi
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
@@ -379,9 +379,9 @@ FUNC(insert3sse4)
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
 	mov      save_ptr(%esp),%ebx
-	mov      m_logsize(%ebx),%esi
-	shl      $1,%esi
-	mov      m_mask(%ebx),%ebx
+	mov      m_mask(%ebx),%esi
+	mov      m_logsize(%ebx),%edi
+	shl      $1,%edi
 	jmp      10f
 
 	// Successful justAdd() lands here.
@@ -408,13 +408,13 @@ FUNC(insert3sse4)
 
 	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
-	pextrd   $1,%xmm7,%edi
-	and      %ebx,r_hi
-	and      %ebx,%edi
+	pextrd   $1,%xmm7,%ebx
+	and      %esi,r_hi
+	and      %esi,%ebx
 	lea      (r_hi,r_hi,2),r_hi
-	lea      (%edi,%edi,2),%edi
+	lea      (%ebx,%ebx,2),%ebx
 	cmp      r_lo,r_hi
-	cmovz    %edi,r_hi
+	cmove    %ebx,r_hi
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
@@ -427,9 +427,9 @@ FUNC(insert3sse4)
 	pcmpeqq  %xmm1,%xmm3
 	pcmpeqq  %xmm1,%xmm2
 	pmovmskb %xmm3,r_lo
-	pmovmskb %xmm2,%edi
+	pmovmskb %xmm2,%ebx
 	shl      $8,r_lo
-	or       %edi,r_lo
+	or       %ebx,r_lo
 	jnz      12f
 
 	// No free slot at r_hi.
@@ -437,7 +437,7 @@ FUNC(insert3sse4)
 	mov      r_hi,r_lo
 
 	// Loop control.
-	sub      $1,%esi
+	sub      $1,%edi
 	jge      10b
 
 	// Broke out of the loop.  Too bad.
@@ -625,9 +625,9 @@ FUNC(insert4sse4)
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
 	mov      save_ptr(%esp),%ebx
-	mov      m_logsize(%ebx),%esi
-	shl      $1,%esi
-	mov      m_mask(%ebx),%ebx
+	mov      m_mask(%ebx),%esi
+	mov      m_logsize(%ebx),%edi
+	shl      $1,%edi
 	jmp      10f
 
 	// Successful justAdd() lands here.
@@ -656,13 +656,13 @@ FUNC(insert4sse4)
 
 	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
-	pextrd   $1,%xmm7,%edi
-	and      %ebx,r_hi
-	and      %ebx,%edi
+	pextrd   $1,%xmm7,%ebx
+	and      %esi,r_hi
+	and      %esi,%ebx
 	shl      $5,r_hi
-	shl      $5,%edi
+	shl      $5,%ebx
 	cmp      r_lo,r_hi
-	cmovz    %edi,r_hi
+	cmove    %ebx,r_hi
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
@@ -674,9 +674,9 @@ FUNC(insert4sse4)
 	pcmpeqq  %xmm1,%xmm2
 	pcmpeqq  (r_ptr,r_hi,1),%xmm1
 	pmovmskb %xmm2,r_lo
-	pmovmskb %xmm1,%edi
+	pmovmskb %xmm1,%ebx
 	shl      $16,r_lo
-	or       %edi,r_lo
+	or       %ebx,r_lo
 	jnz      12f
 
 	// No free slot at r_hi.
@@ -684,7 +684,7 @@ FUNC(insert4sse4)
 	mov      r_hi,r_lo
 
 	// Loop control.
-	sub      $1,%esi
+	sub      $1,%edi
 	jge      10b
 
 	// Broke out of the loop.  Too bad.
