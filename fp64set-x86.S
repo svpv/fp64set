@@ -130,6 +130,9 @@ FUNC(insert2sse4)
 	movddup  %xmm3,%xmm3
 	pcmpeqq  %xmm6,%xmm3
 
+	// Save b1[*] -> xmm7.
+	movdqa   %xmm1,%xmm7
+
 	// Check for free slots in b1[*] -> xmm1.
 	pcmpeqq  %xmm3,%xmm1
 
@@ -173,10 +176,8 @@ FUNC(insert2sse4)
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom goes into xmm7.
 	.align   32
-10:	movq     (r_ptr,r_lo,1),%xmm7
-	movq     8(r_ptr,r_lo,1),%xmm1
-	movq     %xmm1,(r_ptr,r_lo,1)
-	movq     %xmm0,8(r_ptr,r_lo,1)
+10:	palignr  $8,%xmm7,%xmm0
+	movdqa   %xmm0,(r_ptr,r_lo,1)
 
 	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
@@ -194,13 +195,15 @@ FUNC(insert2sse4)
 	pcmpeqq  %xmm6,%xmm1
 
 	// Check for empty slots and insert.
-	pcmpeqq  (r_ptr,r_hi,1),%xmm1
+	movdqa   (r_ptr,r_hi,1),%xmm2
+	pcmpeqq  %xmm2,%xmm1
 	pmovmskb %xmm1,%ebx
 	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
-	movdqa   %xmm7,%xmm0
+	movq     %xmm7,%xmm0
+	movdqa   %xmm2,%xmm7
 	mov      r_hi,r_lo
 
 	// Loop control.
