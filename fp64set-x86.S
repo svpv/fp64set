@@ -178,7 +178,7 @@ FUNC(insert2sse4)
 	movq     %xmm1,(r_ptr,r_lo,1)
 	movq     %xmm0,8(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm7 at edx.
+	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
 	pextrd   $1,%xmm7,%edi
 	and      %ebx,r_hi
@@ -188,7 +188,7 @@ FUNC(insert2sse4)
 	cmp      r_lo,r_hi
 	cmovz    %edi,r_hi
 
-	// Make the blank value for bb[edx].
+	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
 	pinsrd   $2,r_hi,%xmm1
 	pcmpeqq  %xmm6,%xmm1
@@ -199,7 +199,7 @@ FUNC(insert2sse4)
 	test     r_lo,r_lo
 	jnz      12f
 
-	// No free slot at edx.
+	// No free slot at r_hi.
 	movdqa   %xmm7,%xmm0
 	mov      r_hi,r_lo
 
@@ -406,7 +406,7 @@ FUNC(insert3sse4)
 	movdqu   %xmm1,(r_ptr,r_lo,8)
 	movq     %xmm0,16(r_ptr,r_lo,8)
 
-	// Find the alternative bucket for xmm7 at edx.
+	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
 	pextrd   $1,%xmm7,%edi
 	and      %ebx,r_hi
@@ -416,7 +416,7 @@ FUNC(insert3sse4)
 	cmp      r_lo,r_hi
 	cmovz    %edi,r_hi
 
-	// Make the blank value for bb[edx].
+	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
 	pinsrd   $2,r_hi,%xmm1
 	pcmpeqq  %xmm6,%xmm1
@@ -432,7 +432,7 @@ FUNC(insert3sse4)
 	or       %edi,r_lo
 	jnz      12f
 
-	// No free slot at edx.
+	// No free slot at r_hi.
 	movdqa   %xmm7,%xmm0
 	mov      r_hi,r_lo
 
@@ -654,7 +654,7 @@ FUNC(insert4sse4)
 	movq     %xmm2,16(r_ptr,r_lo,1)
 	movq     %xmm0,24(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm7 at edx.
+	// Find the alternative bucket for xmm7 at r_hi.
 	movd     %xmm7,r_hi
 	pextrd   $1,%xmm7,%edi
 	and      %ebx,r_hi
@@ -664,7 +664,7 @@ FUNC(insert4sse4)
 	cmp      r_lo,r_hi
 	cmovz    %edi,r_hi
 
-	// Make the blank value for bb[edx].
+	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm1
 	pinsrd   $2,r_hi,%xmm1
 	pcmpeqq  %xmm6,%xmm1
@@ -679,7 +679,7 @@ FUNC(insert4sse4)
 	or       %edi,r_lo
 	jnz      12f
 
-	// No free slot at edx.
+	// No free slot at r_hi.
 	movdqa   %xmm7,%xmm0
 	mov      r_hi,r_lo
 
