@@ -673,10 +673,9 @@ FUNC(insert4sse4)
 	movdqa   16(r_ptr,r_hi,1),%xmm2
 	pcmpeqq  %xmm1,%xmm2
 	pcmpeqq  (r_ptr,r_hi,1),%xmm1
-	pmovmskb %xmm2,r_lo
+	packssdw %xmm2,%xmm1
 	pmovmskb %xmm1,%ebx
-	shl      $16,r_lo
-	or       %ebx,r_lo
+	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
@@ -698,8 +697,8 @@ FUNC(insert4sse4)
 	jmp      NAME(insert4tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      r_lo,r_lo
-	add      r_lo,r_hi
+12:	bsf      %ebx,%ebx
+	lea      (r_hi,%ebx,2),r_hi
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
