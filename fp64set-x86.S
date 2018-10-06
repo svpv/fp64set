@@ -426,10 +426,9 @@ FUNC(insert3sse4)
 	movdqu   (r_ptr,r_hi,8),%xmm2
 	pcmpeqq  %xmm1,%xmm3
 	pcmpeqq  %xmm1,%xmm2
-	pmovmskb %xmm3,r_lo
+	pblendw  $0xfc,%xmm3,%xmm2
 	pmovmskb %xmm2,%ebx
-	shl      $8,r_lo
-	or       %ebx,r_lo
+	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
@@ -451,9 +450,9 @@ FUNC(insert3sse4)
 	jmp      NAME(insert3tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      r_lo,r_lo
-	shr      $3,r_lo
-	add      r_lo,r_hi
+12:	bsf      %ebx,%ebx
+	shr      $2,%ebx
+	add      %ebx,r_hi
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
