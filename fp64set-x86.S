@@ -126,27 +126,24 @@ FUNC(insert2sse4)
 
 	// Blank values for b1[*] -> xmm3.
 	movd     r_lo,%xmm3
-	pxor     %xmm6,%xmm6
+	pxor     %xmm5,%xmm5
 	movddup  %xmm3,%xmm3
-	pcmpeqq  %xmm6,%xmm3
+	pcmpeqq  %xmm5,%xmm3
 
-	// Save b1[*] -> xmm7.
-	movdqa   %xmm1,%xmm7
+	// Check for free slots in b1[*] -> xmm3.
+	pcmpeqq  %xmm1,%xmm3
 
-	// Check for free slots in b1[*] -> xmm1.
-	pcmpeqq  %xmm3,%xmm1
+	// Blank values for b2[*] -> xmm4.
+	movd     r_hi,%xmm4
+	movddup  %xmm4,%xmm4
+	pcmpeqq  %xmm2,%xmm4
 
-	// Blank values for b2[*] -> xmm3.
-	movd     r_hi,%xmm3
-	movddup  %xmm3,%xmm3
-	pcmpeqq  %xmm6,%xmm3
-
-	// Check for free slots in b2[*] -> xmm2.
-	pcmpeqq  %xmm3,%xmm2
+	// Check for free slots in b2[*] -> xmm4.
+	pcmpeqq  %xmm2,%xmm4
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
-	pblendw  $0xcc,%xmm2,%xmm1
-	pmovmskb %xmm1,%ebx
+	pblendw  $0xcc,%xmm4,%xmm3
+	pmovmskb %xmm3,%ebx
 	test     %ebx,%ebx
 	jnz      1f
 
@@ -174,14 +171,14 @@ FUNC(insert2sse4)
 	RET
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
-	// The element kicked out from the bottom goes into xmm7.
+	// The element kicked out from the bottom is in xmm1.
 	.align   32
-10:	palignr  $8,%xmm7,%xmm0
+10:	palignr  $8,%xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm7 at r_hi.
-	movd     %xmm7,r_hi
-	pextrd   $1,%xmm7,%ebx
+	// Find the alternative bucket for xmm1 at r_hi.
+	movd     %xmm1,r_hi
+	pextrd   $1,%xmm1,%ebx
 	and      %esi,r_hi
 	and      %esi,%ebx
 	shl      $4,r_hi
@@ -190,20 +187,20 @@ FUNC(insert2sse4)
 	cmove    %ebx,r_hi
 
 	// Make the blank value for bb[r_hi].
-	movd     r_hi,%xmm1
-	pinsrd   $2,r_hi,%xmm1
-	pcmpeqq  %xmm6,%xmm1
+	movd     r_hi,%xmm3
+	pinsrd   $2,r_hi,%xmm3
+	pcmpeqq  %xmm5,%xmm3
 
 	// Check for empty slots and insert.
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm2,%xmm1
-	pmovmskb %xmm1,%ebx
+	pcmpeqq  %xmm2,%xmm3
+	pmovmskb %xmm3,%ebx
 	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
-	movq     %xmm7,%xmm0
-	movdqa   %xmm2,%xmm7
+	movq     %xmm1,%xmm0
+	movdqa   %xmm2,%xmm1
 	mov      r_hi,r_lo
 
 	// Loop control.
@@ -226,7 +223,7 @@ FUNC(insert2sse4)
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
-	movq     %xmm7,(r_ptr,r_hi,1)
+	movq     %xmm1,(r_ptr,r_hi,1)
 	FREE
 	mov      $1,%eax
 	RET
@@ -240,19 +237,19 @@ FUNC(add2st1sse4)
 	pinsrd   $1,r_hi,%xmm0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm7
+	movdqa   m_stash(r_ptr),%xmm5
 	movddup  %xmm0,%xmm0
 	mov      m_bb(r_ptr),r_ptr
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm3
 	movdqa   (r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm7
+	pcmpeqq  %xmm0,%xmm5
 	movdqa   %xmm3,%xmm1
 	pcmpeqq  %xmm0,%xmm3
+	por      %xmm5,%xmm3
 	movdqa   %xmm4,%xmm2
 	pcmpeqq  %xmm0,%xmm4
-	por      %xmm7,%xmm3
 	por      %xmm4,%xmm3
 	pmovmskb %xmm3,r_ptr
 	test     r_ptr,r_ptr
