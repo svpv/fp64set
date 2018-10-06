@@ -560,18 +560,22 @@ FUNC(add4st0sse4)
 	movddup  %xmm0,%xmm0
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	por      %xmm2,%xmm1
-	movdqa   16(r_ptr,r_lo,1),%xmm3
-	movdqa   16(r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm4,%xmm1
-	por      %xmm3,%xmm1
-	pmovmskb %xmm1,r_ptr
+	movdqa   (r_ptr,r_lo,1),%xmm5
+	movdqa   (r_ptr,r_hi,1),%xmm6
+	movdqa   %xmm5,%xmm1
+	pcmpeqq  %xmm0,%xmm5
+	movdqa   %xmm6,%xmm2
+	pcmpeqq  %xmm0,%xmm6
+	por      %xmm6,%xmm5
+	movdqa   16(r_ptr,r_lo,1),%xmm6
+	movdqa   16(r_ptr,r_hi,1),%xmm7
+	movdqa   %xmm6,%xmm3
+	pcmpeqq  %xmm0,%xmm6
+	movdqa   %xmm7,%xmm4
+	pcmpeqq  %xmm0,%xmm7
+	por      %xmm7,%xmm6
+	por      %xmm6,%xmm5
+	pmovmskb %xmm5,r_ptr
 	test     r_ptr,r_ptr
 	jz       NAME(insert4sse4)
 	FREE
@@ -586,43 +590,36 @@ FUNC(insert4sse4)
 	mov      m_bb(r_ptr),r_ptr
 	mov      %ebx,save_ebx(%esp)
 
-	// Blank values for b1[*] + b2[*] -> xmm3.
-	movd     r_lo,%xmm3
-	pinsrd   $2,r_hi,%xmm3
+	// Blank values for b1[*] -> xmm5.
+	movd     r_lo,%xmm5
 	pxor     %xmm6,%xmm6
-	pcmpeqq  %xmm6,%xmm3
+	movddup  %xmm5,%xmm5
+	pcmpeqq  %xmm6,%xmm5
 
-	// Load b1[0] + b2[0], check for a free slot.
-	movq     (r_ptr,r_lo,1),%xmm1
-	movhps   (r_ptr,r_hi,1),%xmm1
-	pcmpeqq  %xmm3,%xmm1
+	// Check for free slots in b1[0,1] -> xmm1.
+	pcmpeqq  %xmm5,%xmm1
+
+	// Blank values for b2[*] -> xmm7.
+	movd     r_hi,%xmm7
+	movddup  %xmm7,%xmm7
+	pcmpeqq  %xmm6,%xmm7
+
+	// Check for free slots in b2[0,1] -> xmm2.
+	pcmpeqq  %xmm7,%xmm2
+
+	// Combine (b1[0],b2[0],b1[1],b2[1]) -> xmm1.
+	pblendw  $0xcc,%xmm2,%xmm1
+
+	// Likwise, b1[2,3] + b2[2,3] -> xmm3.
+	pcmpeqq  %xmm5,%xmm3
+	pcmpeqq  %xmm7,%xmm4
+	pblendw  $0xcc,%xmm4,%xmm3
+
+	// Recombine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],b1[3],b2[3]) -> mask.
+	packssdw %xmm3,%xmm1
 	pmovmskb %xmm1,%ebx
 	test     %ebx,%ebx
-	jnz      2f
-
-	// Load b1[1] + b2[1], check for a free slot.
-	movq     8(r_ptr,r_lo,1),%xmm1
-	movhps   8(r_ptr,r_hi,1),%xmm1
-	pcmpeqq  %xmm3,%xmm1
-	pmovmskb %xmm1,%ebx
-	test     %ebx,%ebx
-	jnz      3f
-
-	// Load b1[2] + b2[2], check for a free slot.
-	movq     16(r_ptr,r_lo,1),%xmm1
-	movhps   16(r_ptr,r_hi,1),%xmm1
-	pcmpeqq  %xmm3,%xmm1
-	pmovmskb %xmm1,%ebx
-	test     %ebx,%ebx
-	jnz      4f
-
-	// Load b1[3] + b2[3], check for a free slot.
-	movq     24(r_ptr,r_lo,1),%xmm1
-	movhps   24(r_ptr,r_hi,1),%xmm1
-	pcmpeqq  %xmm3,%xmm1
-	pmovmskb %xmm1,%ebx
-	test     %ebx,%ebx
-	jnz      5f
+	jnz      1f
 
 	// Nope, preparing for the kickAdd() loop.
 	mov      %esi,save_esi(%esp)
@@ -634,32 +631,16 @@ FUNC(insert4sse4)
 	jmp      10f
 
 	// Successful justAdd() lands here.
-2:	test     %bl,%bl
-	cmovz    r_hi,r_lo
+1:	bsf      %ebx,%ebx
+	// Is it b1[] or b2[]? bsf returns (0, 4, 8, 12) vs (2, 6, 10, 14).
+	test     $2,%ebx
+	cmovnz   r_hi,r_lo
+	// Is it [0], [1], [2], or [3]?
+	shr      $2,%ebx
+	lea      (r_lo,%ebx,8),r_lo
 	mov      save_ebx(%esp),%ebx
 	FREE
 	movq     %xmm0,(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
-3:	test     %bl,%bl
-	cmovz    r_hi,r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
-	movq     %xmm0,8(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
-4:	test     %bl,%bl
-	cmovz    r_hi,r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
-	movq     %xmm0,16(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
-5:	test     %bl,%bl
-	cmovz    r_hi,r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
-	movq     %xmm0,24(r_ptr,r_lo,1)
 	mov      $1,%eax
 	RET
 
@@ -741,20 +722,24 @@ FUNC(add4st1sse4)
 	movddup  %xmm0,%xmm0
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   (r_ptr,r_lo,1),%xmm5
+	movdqa   (r_ptr,r_hi,1),%xmm6
 	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	movdqa   16(r_ptr,r_lo,1),%xmm3
-	movdqa   16(r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm7,%xmm1
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
-	por      %xmm4,%xmm1
-	pmovmskb %xmm1,r_ptr
+	movdqa   %xmm5,%xmm1
+	pcmpeqq  %xmm0,%xmm5
+	movdqa   %xmm6,%xmm2
+	pcmpeqq  %xmm0,%xmm6
+	por      %xmm7,%xmm6
+	por      %xmm6,%xmm5
+	movdqa   16(r_ptr,r_lo,1),%xmm6
+	movdqa   16(r_ptr,r_hi,1),%xmm7
+	movdqa   %xmm6,%xmm3
+	pcmpeqq  %xmm0,%xmm6
+	movdqa   %xmm7,%xmm4
+	pcmpeqq  %xmm0,%xmm7
+	por      %xmm7,%xmm6
+	por      %xmm6,%xmm5
+	pmovmskb %xmm5,r_ptr
 	test     r_ptr,r_ptr
 	jz       NAME(insert4sse4)
 	FREE
