@@ -72,20 +72,23 @@
 #define save_edi   12
 #endif
 
+// has() only clobbers %XMM0 and %xmm1-%xmm3.
+#define XMM0 xmm4
+
 FUNC(has2st0sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movddup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (r_ptr,r_hi,1),%xmm0
-	por      %xmm0,%xmm1
+	pcmpeqq  %XMM0,%xmm1
+	pcmpeqq  (r_ptr,r_hi,1),%XMM0
+	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
 END(has2st0sse4)
@@ -261,42 +264,42 @@ END(add2st1sse4)
 
 FUNC(has2st1sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm7
-	movddup  %xmm0,%xmm0
+	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
+	movddup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  (r_ptr,r_hi,1),%xmm0
-	por      %xmm7,%xmm0
-	por      %xmm0,%xmm1
+	pcmpeqq  %XMM0,%xmm3
+	pcmpeqq  %XMM0,%xmm1
+	pcmpeqq  (r_ptr,r_hi,1),%XMM0
+	por      %xmm3,%xmm1
+	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
 END(has2st1sse4)
 
 FUNC(has3st0sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movddup  %xmm0,%xmm0
+	movddup  %XMM0,%XMM0
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
+	pcmpeqq  %XMM0,%xmm1
 	movq     (r_ptr,r_lo,8),%xmm3
 	movhps   (r_ptr,r_hi,8),%xmm3
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  %XMM0,%xmm2
+	pcmpeqq  %XMM0,%xmm3
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%eax
@@ -472,8 +475,8 @@ FUNC(add3st1sse4)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm5
-	movddup  %xmm0,%xmm0
 	mov      m_bb(r_ptr),r_ptr
+	movddup  %xmm0,%xmm0
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   (r_ptr,r_lo,8),%xmm4
@@ -500,24 +503,24 @@ END(add3st1sse4)
 
 FUNC(has3st1sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm7
-	movddup  %xmm0,%xmm0
+	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
+	movddup  %XMM0,%XMM0
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
-	por      %xmm7,%xmm1
+	pcmpeqq  %XMM0,%xmm3
+	pcmpeqq  %XMM0,%xmm1
+	pcmpeqq  %XMM0,%xmm2
+	por      %xmm3,%xmm1
 	movq     (r_ptr,r_lo,8),%xmm3
 	movhps   (r_ptr,r_hi,8),%xmm3
-	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  %XMM0,%xmm3
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%eax
@@ -526,24 +529,24 @@ END(has3st1sse4)
 
 FUNC(has4st0sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movddup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm0,%xmm1
+	pcmpeqq  %XMM0,%xmm1
 	movdqa   16(r_ptr,r_lo,1),%xmm3
-	pcmpeqq  %xmm0,%xmm2
-	pcmpeqq  %xmm0,%xmm3
+	pcmpeqq  %XMM0,%xmm2
+	pcmpeqq  %XMM0,%xmm3
+	pcmpeqq  16(r_ptr,r_hi,1),%XMM0
 	por      %xmm2,%xmm1
-	pcmpeqq  16(r_ptr,r_hi,1),%xmm0
 	por      %xmm3,%xmm1
-	por      %xmm0,%xmm1
+	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
 END(has4st0sse4)
@@ -746,30 +749,27 @@ END(add4st1sse4)
 
 FUNC(has4st1sse4)
 	REG3
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	movdqa   m_stash(r_ptr),%xmm7
+	movd     r_lo,%XMM0
+	pinsrd   $1,r_hi,%XMM0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
+	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movddup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm0,%xmm7
-	pcmpeqq  %xmm0,%xmm1
-	pcmpeqq  %xmm0,%xmm2
+	pcmpeqq  %XMM0,%xmm3
+	pcmpeqq  %XMM0,%xmm1
+	por      %xmm3,%xmm1
 	movdqa   16(r_ptr,r_lo,1),%xmm3
-	movdqa   16(r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm3
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm7,%xmm1
+	pcmpeqq  %XMM0,%xmm2
+	pcmpeqq  %XMM0,%xmm3
+	pcmpeqq  16(r_ptr,r_hi,1),%XMM0
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
-	por      %xmm4,%xmm1
+	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
 END(has4st1sse4)
