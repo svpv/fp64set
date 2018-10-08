@@ -154,7 +154,7 @@ FUNC(insert2sse4)
 	mov      m_mask(%ebx),%esi
 	mov      m_logsize(%ebx),%edi
 	shl      $1,%edi
-	jmp      10f
+	jmp      2f
 
 	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
@@ -173,7 +173,7 @@ FUNC(insert2sse4)
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
 	.align   32
-10:	palignr  $8,%xmm1,%xmm0
+2:	palignr  $8,%xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
 
 	// Find the alternative bucket for xmm1 at r_hi.
@@ -196,7 +196,7 @@ FUNC(insert2sse4)
 	pcmpeqq  %xmm2,%xmm3
 	pmovmskb %xmm3,%ebx
 	test     %ebx,%ebx
-	jnz      12f
+	jnz      3f
 
 	// No free slot at r_hi.
 	movq     %xmm1,%xmm0
@@ -205,7 +205,7 @@ FUNC(insert2sse4)
 
 	// Loop control.
 	sub      $1,%edi
-	jge      10b
+	jge      2b
 
 	// Broke out of the loop.  Too bad.
 	mov      save_ptr(%esp),r_ptr
@@ -218,7 +218,7 @@ FUNC(insert2sse4)
 	jmp      NAME(insert2tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      %ebx,%ebx
+3:	bsf      %ebx,%ebx
 	add      %ebx,r_hi
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
@@ -382,7 +382,7 @@ FUNC(insert3sse4)
 	mov      m_mask(%ebx),%esi
 	mov      m_logsize(%ebx),%edi
 	shl      $1,%edi
-	jmp      10f
+	jmp      2f
 
 	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
@@ -401,7 +401,7 @@ FUNC(insert3sse4)
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
 	.align   32
-10:	palignr  $8,%xmm1,%xmm3
+2:	palignr  $8,%xmm1,%xmm3
 	movdqu   %xmm3,(r_ptr,r_lo,8)
 	movq     %xmm0,16(r_ptr,r_lo,8)
 
@@ -429,7 +429,7 @@ FUNC(insert3sse4)
 	packssdw %xmm4,%xmm6
 	pmovmskb %xmm6,%ebx
 	and      $0x0fff,%ebx
-	jnz      12f
+	jnz      3f
 
 	// No free slot at r_hi.
 	movq     %xmm1,%xmm0
@@ -438,7 +438,7 @@ FUNC(insert3sse4)
 
 	// Loop control.
 	sub      $1,%edi
-	jge      10b
+	jge      2b
 
 	// Broke out of the loop.  Too bad.
 	mov      save_ptr(%esp),r_ptr
@@ -451,7 +451,7 @@ FUNC(insert3sse4)
 	jmp      NAME(insert3tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      %ebx,%ebx
+3:	bsf      %ebx,%ebx
 	shr      $2,%ebx
 	add      %ebx,r_hi
 	mov      save_ebx(%esp),%ebx
@@ -625,7 +625,7 @@ FUNC(insert4sse4)
 	mov      m_mask(%ebx),%esi
 	mov      m_logsize(%ebx),%edi
 	shl      $1,%edi
-	jmp      10f
+	jmp      2f
 
 	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
@@ -644,7 +644,7 @@ FUNC(insert4sse4)
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
 	.align   32
-10:	palignr  $8,%xmm3,%xmm0
+2:	palignr  $8,%xmm3,%xmm0
 	movdqa   %xmm0,16(r_ptr,r_lo,1)
 	palignr  $8,%xmm1,%xmm3
 	movdqa   %xmm3,(r_ptr,r_lo,1)
@@ -673,7 +673,7 @@ FUNC(insert4sse4)
 	packssdw %xmm4,%xmm6
 	pmovmskb %xmm6,%ebx
 	test     %ebx,%ebx
-	jnz      12f
+	jnz      3f
 
 	// No free slot at r_hi.
 	movq     %xmm1,%xmm0
@@ -682,7 +682,7 @@ FUNC(insert4sse4)
 
 	// Loop control.
 	sub      $1,%edi
-	jge      10b
+	jge      2b
 
 	// Broke out of the loop.  Too bad.
 	mov      save_ptr(%esp),r_ptr
@@ -695,7 +695,7 @@ FUNC(insert4sse4)
 	jmp      NAME(insert4tail)
 
 	// Successful kickAdd() lands here.
-12:	bsf      %ebx,%ebx
+3:	bsf      %ebx,%ebx
 	lea      (r_hi,%ebx,2),r_hi
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
