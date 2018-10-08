@@ -197,7 +197,7 @@ FUNC(insert2)
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm3
-	pinsrd   $2,r_hi,%xmm3
+	movdDup  %xmm3,%xmm3
 	pcmpeqq  %xmm5,%xmm3
 
 	// Check for empty slots and insert.
@@ -426,7 +426,7 @@ FUNC(insert3)
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm4
-	pinsrd   $2,r_hi,%xmm4
+	movdDup  %xmm4,%xmm4
 	pcmpeqq  %xmm5,%xmm4
 
 	// Check for empty slots and insert.
@@ -670,7 +670,7 @@ FUNC(insert4)
 
 	// Make the blank value for bb[r_hi].
 	movd     r_hi,%xmm4
-	pinsrd   $2,r_hi,%xmm4
+	movdDup  %xmm4,%xmm4
 	pcmpeqq  %xmm5,%xmm4
 
 	// Check for empty slots and insert.
