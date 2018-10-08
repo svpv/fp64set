@@ -24,10 +24,13 @@ static inline uint64_t rnd(void)
 void addUniq(struct fp64set *set, size_t *np, uint64_t *tp)
 {
     size_t n = 0;
+    uint64_t state0 = rndState;
+    uint64_t rnd1, rnd2;
     uint64_t t0 = __rdtsc();
     uint64_t t1 = t0;
     while (1) {
-	int rc = fp64set_add(set, rnd());
+	rnd1 = rnd();
+	int rc = fp64set_add(set, rnd1);
 	assert(rc > 0);
 	// Not including the resize cost.
 	if (rc > 1)
@@ -35,6 +38,12 @@ void addUniq(struct fp64set *set, size_t *np, uint64_t *tp)
 	n++;
 	t1 = __rdtsc();
     }
+    // Recheck with fp64set_has().
+    rndState = state0;
+    do {
+	rnd2 = rnd();
+	assert(fp64set_has(set, rnd2));
+    } while (rnd2 != rnd1);
     *np = n;
     *tp = t1 - t0;
 }
