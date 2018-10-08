@@ -590,34 +590,31 @@ FUNC(insert4sse4)
 	mov      m_bb(r_ptr),r_ptr
 	mov      %ebx,save_ebx(%esp)
 
-	// Blank values for b1[*] -> xmm5.
-	movd     r_lo,%xmm5
-	pxor     %xmm6,%xmm6
-	movddup  %xmm5,%xmm5
-	pcmpeqq  %xmm6,%xmm5
+	// Blank values for b2[*] -> xmm6.
+	movd     r_hi,%xmm6
+	pxor     %xmm5,%xmm5
+	movddup  %xmm6,%xmm6
+	pcmpeqq  %xmm5,%xmm6
 
-	// Check for free slots in b1[0,1] -> xmm1.
-	pcmpeqq  %xmm5,%xmm1
+	// Check for free slots in b2[*] -> xmm2.
+	pcmpeqq  %xmm6,%xmm2
+	pcmpeqq  %xmm6,%xmm4
+	packssdw %xmm4,%xmm2
 
-	// Blank values for b2[*] -> xmm7.
-	movd     r_hi,%xmm7
-	movddup  %xmm7,%xmm7
-	pcmpeqq  %xmm6,%xmm7
+	// Blank values for b1[*] -> xmm6.
+	movd     r_lo,%xmm6
+	movddup  %xmm6,%xmm6
+	pcmpeqq  %xmm5,%xmm6
 
-	// Check for free slots in b2[0,1] -> xmm2.
-	pcmpeqq  %xmm7,%xmm2
-
-	// Combine (b1[0],b2[0],b1[1],b2[1]) -> xmm1.
-	pblendw  $0xcc,%xmm2,%xmm1
-
-	// Likwise, b1[2,3] + b2[2,3] -> xmm3.
-	pcmpeqq  %xmm5,%xmm3
-	pcmpeqq  %xmm7,%xmm4
-	pblendw  $0xcc,%xmm4,%xmm3
+	// Check for free slots in b1[*] -> xmm6.
+	movdqa   %xmm3,%xmm4
+	pcmpeqq  %xmm6,%xmm4
+	pcmpeqq  %xmm1,%xmm6
+	packssdw %xmm4,%xmm6
 
 	// Recombine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],b1[3],b2[3]) -> mask.
-	packssdw %xmm3,%xmm1
-	pmovmskb %xmm1,%ebx
+	pblendw  $0xaa,%xmm2,%xmm6
+	pmovmskb %xmm6,%ebx
 	test     %ebx,%ebx
 	jnz      1f
 
@@ -645,18 +642,16 @@ FUNC(insert4sse4)
 	RET
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
-	// The element kicked out from the bottom goes into xmm7.
+	// The element kicked out from the bottom is in xmm1.
 	.align   32
-10:	movq     (r_ptr,r_lo,1),%xmm7
-	movdqu   8(r_ptr,r_lo,1),%xmm1
-	movq     24(r_ptr,r_lo,1),%xmm2
-	movdqa   %xmm1,(r_ptr,r_lo,1)
-	movq     %xmm2,16(r_ptr,r_lo,1)
-	movq     %xmm0,24(r_ptr,r_lo,1)
+10:	palignr  $8,%xmm3,%xmm0
+	movdqa   %xmm0,16(r_ptr,r_lo,1)
+	palignr  $8,%xmm1,%xmm3
+	movdqa   %xmm3,(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm7 at r_hi.
-	movd     %xmm7,r_hi
-	pextrd   $1,%xmm7,%ebx
+	// Find the alternative bucket for xmm1 at r_hi.
+	movd     %xmm1,r_hi
+	pextrd   $1,%xmm1,%ebx
 	and      %esi,r_hi
 	and      %esi,%ebx
 	shl      $5,r_hi
@@ -665,21 +660,24 @@ FUNC(insert4sse4)
 	cmove    %ebx,r_hi
 
 	// Make the blank value for bb[r_hi].
-	movd     r_hi,%xmm1
-	pinsrd   $2,r_hi,%xmm1
-	pcmpeqq  %xmm6,%xmm1
+	movd     r_hi,%xmm4
+	pinsrd   $2,r_hi,%xmm4
+	pcmpeqq  %xmm5,%xmm4
 
 	// Check for empty slots and insert.
-	movdqa   16(r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm1,%xmm2
-	pcmpeqq  (r_ptr,r_hi,1),%xmm1
-	packssdw %xmm2,%xmm1
-	pmovmskb %xmm1,%ebx
+	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   16(r_ptr,r_hi,1),%xmm3
+	movdqa   %xmm2,%xmm6
+	pcmpeqq  %xmm4,%xmm6
+	pcmpeqq  %xmm3,%xmm4
+	packssdw %xmm4,%xmm6
+	pmovmskb %xmm6,%ebx
 	test     %ebx,%ebx
 	jnz      12f
 
 	// No free slot at r_hi.
-	movdqa   %xmm7,%xmm0
+	movq     %xmm1,%xmm0
+	movdqa   %xmm2,%xmm1
 	mov      r_hi,r_lo
 
 	// Loop control.
@@ -702,7 +700,7 @@ FUNC(insert4sse4)
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
-	movq     %xmm7,(r_ptr,r_hi,1)
+	movq     %xmm1,(r_ptr,r_hi,1)
 	FREE
 	mov      $1,%eax
 	RET
