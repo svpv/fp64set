@@ -75,6 +75,9 @@
 #define save_edi   12
 #endif
 
+// movddup vs punpcklqdq on the same register
+#define movdDup movddup
+
 // has() only clobbers %XMM0 and %xmm1-%xmm3.
 #define XMM0 xmm4
 
@@ -85,7 +88,7 @@ FUNC(has2st0)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -105,7 +108,7 @@ FUNC(add2st0)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm3
@@ -133,7 +136,7 @@ FUNC(insert2)
 	// Blank values for b1[*] -> xmm3.
 	movd     r_lo,%xmm3
 	pxor     %xmm5,%xmm5
-	movddup  %xmm3,%xmm3
+	movdDup  %xmm3,%xmm3
 	pcmpeqq  %xmm5,%xmm3
 
 	// Check for free slots in b1[*] -> xmm3.
@@ -141,7 +144,7 @@ FUNC(insert2)
 
 	// Blank values for b2[*] -> xmm4.
 	movd     r_hi,%xmm4
-	movddup  %xmm4,%xmm4
+	movdDup  %xmm4,%xmm4
 	pcmpeqq  %xmm2,%xmm4
 
 	// Check for free slots in b2[*] -> xmm4.
@@ -244,7 +247,7 @@ FUNC(add2st1)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm5
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	mov      m_bb(r_ptr),r_ptr
 	shl      $4,r_lo
 	shl      $4,r_hi
@@ -273,7 +276,7 @@ FUNC(has2st1)
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -295,7 +298,7 @@ FUNC(has3st0)
 	mov      m_bb(r_ptr),r_ptr
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
 	pcmpeqq  %XMM0,%xmm1
@@ -320,7 +323,7 @@ FUNC(add3st0)
 	mov      m_bb(r_ptr),r_ptr
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	movdqu   (r_ptr,r_lo,8),%xmm4
 	movdqu   (r_ptr,r_hi,8),%xmm5
 	movq     16(r_ptr,r_lo,8),%xmm3
@@ -351,7 +354,7 @@ FUNC(insert3)
 	// Blank values for b2[*] -> xmm6.
 	movd     r_hi,%xmm6
 	pxor     %xmm5,%xmm5
-	movddup  %xmm6,%xmm6
+	movdDup  %xmm6,%xmm6
 	pcmpeqq  %xmm5,%xmm6
 
 	// Check for free slots in b2[0,1] -> xmm2.
@@ -359,7 +362,7 @@ FUNC(insert3)
 
 	// Blank values for b1[*] -> xmm4.
 	movd     r_lo,%xmm4
-	movddup  %xmm4,%xmm4
+	movdDup  %xmm4,%xmm4
 	pcmpeqq  %xmm5,%xmm4
 
 	// Blank values for b1[*] + b2[*] -> xmm6.
@@ -479,7 +482,7 @@ FUNC(add3st1)
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm5
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   (r_ptr,r_lo,8),%xmm4
@@ -512,7 +515,7 @@ FUNC(has3st1)
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   8(r_ptr,r_lo,8),%xmm1
@@ -537,7 +540,7 @@ FUNC(has4st0)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -563,7 +566,7 @@ FUNC(add4st0)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm5
@@ -599,7 +602,7 @@ FUNC(insert4)
 	// Blank values for b2[*] -> xmm6.
 	movd     r_hi,%xmm6
 	pxor     %xmm5,%xmm5
-	movddup  %xmm6,%xmm6
+	movdDup  %xmm6,%xmm6
 	pcmpeqq  %xmm5,%xmm6
 
 	// Check for free slots in b2[*] -> xmm2.
@@ -609,7 +612,7 @@ FUNC(insert4)
 
 	// Blank values for b1[*] -> xmm6.
 	movd     r_lo,%xmm6
-	movddup  %xmm6,%xmm6
+	movdDup  %xmm6,%xmm6
 	pcmpeqq  %xmm5,%xmm6
 
 	// Check for free slots in b1[*] -> xmm6.
@@ -722,7 +725,7 @@ FUNC(add4st1)
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %xmm0,%xmm0
+	movdDup  %xmm0,%xmm0
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm5
@@ -758,7 +761,7 @@ FUNC(has4st1)
 	and      m_mask(r_ptr),r_hi
 	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
-	movddup  %XMM0,%XMM0
+	movdDup  %XMM0,%XMM0
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
