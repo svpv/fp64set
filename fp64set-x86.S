@@ -535,8 +535,8 @@ FUNC(has4st0sse4)
 	and      m_mask(r_ptr),r_hi
 	mov      m_bb(r_ptr),r_ptr
 	movddup  %XMM0,%XMM0
-	shl      $4,r_lo
-	shl      $4,r_hi
+	shl      $5,r_lo
+	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
 	pcmpeqq  %XMM0,%xmm1
@@ -756,8 +756,8 @@ FUNC(has4st1sse4)
 	movdqa   m_stash(r_ptr),%xmm3
 	mov      m_bb(r_ptr),r_ptr
 	movddup  %XMM0,%XMM0
-	shl      $4,r_lo
-	shl      $4,r_hi
+	shl      $5,r_lo
+	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
 	pcmpeqq  %XMM0,%xmm3
