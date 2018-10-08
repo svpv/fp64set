@@ -18,14 +18,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#define NAME(name) fp64set_##name
-#define FPTR(name) $NAME(name)
+#define NAME(name) fp64set_##name##sse4
+#define TAIL(name) fp64set_##name##tail
+
+#define AlignFunc  32
+#define AlignLoop  32
 
 #define FUNC(name)  \
 	.global    NAME(name); \
 	.hidden    NAME(name); \
 	.type      NAME(name),@function; \
-	.align     16; \
+	.align     AlignFunc; \
 	NAME(name):
 
 #define END(name) \
@@ -75,7 +78,7 @@
 // has() only clobbers %XMM0 and %xmm1-%xmm3.
 #define XMM0 xmm4
 
-FUNC(has2st0sse4)
+FUNC(has2st0)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -91,9 +94,9 @@ FUNC(has2st0sse4)
 	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has2st0sse4)
+END(has2st0)
 
-FUNC(add2st0sse4)
+FUNC(add2st0)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -114,13 +117,13 @@ FUNC(add2st0sse4)
 	por      %xmm4,%xmm3
 	pmovmskb %xmm3,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert2sse4)
+	jz       NAME(insert2)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add2st0sse4)
+END(add2st0)
 
-FUNC(insert2sse4)
+FUNC(insert2)
 	// Strategically bump set->cnt.
 	mov      save_ptr(%esp),r_ptr
 	addl     $1,m_cnt(r_ptr)
@@ -175,7 +178,7 @@ FUNC(insert2sse4)
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
-	.align   32
+	.align   AlignLoop
 2:	palignr  $8,%xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
 
@@ -218,7 +221,7 @@ FUNC(insert2sse4)
 	FREE
 	movd     %xmm0,r_lo
 	pextrd   $1,%xmm0,r_hi
-	jmp      NAME(insert2tail)
+	jmp      TAIL(insert2)
 
 	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
@@ -230,9 +233,9 @@ FUNC(insert2sse4)
 	FREE
 	mov      $1,%eax
 	RET
-END(insert2sse4)
+END(insert2)
 
-FUNC(add2st1sse4)
+FUNC(add2st1)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -256,13 +259,13 @@ FUNC(add2st1sse4)
 	por      %xmm4,%xmm3
 	pmovmskb %xmm3,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert2sse4)
+	jz       NAME(insert2)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add2st1sse4)
+END(add2st1)
 
-FUNC(has2st1sse4)
+FUNC(has2st1)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -281,9 +284,9 @@ FUNC(has2st1sse4)
 	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has2st1sse4)
+END(has2st1)
 
-FUNC(has3st0sse4)
+FUNC(has3st0)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -304,9 +307,9 @@ FUNC(has3st0sse4)
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has3st0sse4)
+END(has3st0)
 
-FUNC(add3st0sse4)
+FUNC(add3st0)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -332,13 +335,13 @@ FUNC(add3st0sse4)
 	por      %xmm5,%xmm4
 	pmovmskb %xmm4,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert3sse4)
+	jz       NAME(insert3)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add3st0sse4)
+END(add3st0)
 
-FUNC(insert3sse4)
+FUNC(insert3)
 	// Strategically bump set->cnt.
 	mov      save_ptr(%esp),r_ptr
 	addl     $1,m_cnt(r_ptr)
@@ -403,7 +406,7 @@ FUNC(insert3sse4)
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
-	.align   32
+	.align   AlignLoop
 2:	palignr  $8,%xmm1,%xmm3
 	movdqu   %xmm3,(r_ptr,r_lo,8)
 	movq     %xmm0,16(r_ptr,r_lo,8)
@@ -451,7 +454,7 @@ FUNC(insert3sse4)
 	FREE
 	movd     %xmm0,r_lo
 	pextrd   $1,%xmm0,r_hi
-	jmp      NAME(insert3tail)
+	jmp      TAIL(insert3)
 
 	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
@@ -464,9 +467,9 @@ FUNC(insert3sse4)
 	FREE
 	mov      $1,%eax
 	RET
-END(insert3sse4)
+END(insert3)
 
-FUNC(add3st1sse4)
+FUNC(add3st1)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -495,13 +498,13 @@ FUNC(add3st1sse4)
 	por      %xmm5,%xmm4
 	pmovmskb %xmm4,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert3sse4)
+	jz       NAME(insert3)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add3st1sse4)
+END(add3st1)
 
-FUNC(has3st1sse4)
+FUNC(has3st1)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -525,9 +528,9 @@ FUNC(has3st1sse4)
 	por      %xmm3,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has3st1sse4)
+END(has3st1)
 
-FUNC(has4st0sse4)
+FUNC(has4st0)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -549,9 +552,9 @@ FUNC(has4st0sse4)
 	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has4st0sse4)
+END(has4st0)
 
-FUNC(add4st0sse4)
+FUNC(add4st0)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -580,13 +583,13 @@ FUNC(add4st0sse4)
 	por      %xmm6,%xmm5
 	pmovmskb %xmm5,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert4sse4)
+	jz       NAME(insert4)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add4st0sse4)
+END(add4st0)
 
-FUNC(insert4sse4)
+FUNC(insert4)
 	// Strategically bump set->cnt.
 	mov      save_ptr(%esp),r_ptr
 	addl     $1,m_cnt(r_ptr)
@@ -646,7 +649,7 @@ FUNC(insert4sse4)
 
 	// Loop: the element in xmm0 is pushed at eax from the top.
 	// The element kicked out from the bottom is in xmm1.
-	.align   32
+	.align   AlignLoop
 2:	palignr  $8,%xmm3,%xmm0
 	movdqa   %xmm0,16(r_ptr,r_lo,1)
 	palignr  $8,%xmm1,%xmm3
@@ -695,7 +698,7 @@ FUNC(insert4sse4)
 	FREE
 	movd     %xmm0,r_lo
 	pextrd   $1,%xmm0,r_hi
-	jmp      NAME(insert4tail)
+	jmp      TAIL(insert4)
 
 	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
@@ -707,9 +710,9 @@ FUNC(insert4sse4)
 	FREE
 	mov      $1,%eax
 	RET
-END(insert4sse4)
+END(insert4)
 
-FUNC(add4st1sse4)
+FUNC(add4st1)
 	REG3
 	ALLOC
 	SAVE_PTR
@@ -741,13 +744,13 @@ FUNC(add4st1sse4)
 	por      %xmm6,%xmm5
 	pmovmskb %xmm5,r_ptr
 	test     r_ptr,r_ptr
-	jz       NAME(insert4sse4)
+	jz       NAME(insert4)
 	FREE
 	xor      %eax,%eax
 	RET
-END(add4st1sse4)
+END(add4st1)
 
-FUNC(has4st1sse4)
+FUNC(has4st1)
 	REG3
 	movd     r_lo,%XMM0
 	pinsrd   $1,r_hi,%XMM0
@@ -772,4 +775,4 @@ FUNC(has4st1sse4)
 	por      %XMM0,%xmm1
 	pmovmskb %xmm1,%eax
 	RET
-END(has4st1sse4)
+END(has4st1)
