@@ -81,34 +81,132 @@
 // has() only clobbers %XMM0 and %xmm1-%xmm3.
 #define XMM0 xmm4
 
-FUNC(has2st0)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
+// Common setup for has() and add().
+// The fingerprint goes into \xmm0.
+.macro argBegin xmm0 st
+	movd     r_lo,\xmm0
+	pinsrd   $1,r_hi,\xmm0
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
+    .ifnb \st
+	movdqa   m_stash(r_ptr),\st
+    .endif
 	mov      m_bb(r_ptr),r_ptr
-	movdDup  %XMM0,%XMM0
+	movdDup  \xmm0,\xmm0
+.endm
+
+.macro hasBegin st
+	REG3
+	argBegin %XMM0 \st
+.endm
+
+.macro hasEnd xmm
+	pmovmskb \xmm,%eax
+	RET
+.endm
+
+// add() routines start in a manner similar to has().
+.macro addBegin st
+	REG3
+	ALLOC
+	SAVE_PTR
+	argBegin %xmm0 \st
+.endm
+
+// If the element is already added, add() returns early.
+.macro addEnd xmm insert
+	pmovmskb \xmm,r_ptr
+	test     r_ptr,r_ptr
+	jz       \insert
+	FREE
+	xor      %eax,%eax
+	RET
+.endm
+
+// insert() are private routines called by add() with custom calling
+// convention: most registers are passed from add() in pristine form;
+// specifically b1[] elements are passed in xmm1 and (bsize>2) xmm3.
+.macro insertBegin
+	// Strategically bump set->cnt.
+	mov      save_ptr(%esp),r_ptr
+	addl     $1,m_cnt(r_ptr)
+	mov      m_bb(r_ptr),r_ptr
+	mov      %ebx,save_ebx(%esp)
+.endm
+
+// The frist part of insert() is sometimes named justAdd() - the easy case
+// when there is a free slot in either b1[] or b2[].  This is how it ends.
+.macro justEnd
+	mov      save_ebx(%esp),%ebx
+	FREE
+	mov      $1,%eax
+	RET
+.endm
+
+// Otherwise, the second part of insert() is entered, the kickAdd() loop.
+// An element is kicked out from the bottom of b1[] and reinserted at the
+// top of its alternative bucket.
+.macro gonnaKick
+	mov      %esi,save_esi(%esp)
+	mov      %edi,save_edi(%esp)
+	mov      save_ptr(%esp),%ebx
+	mov      m_mask(%ebx),%esi
+	mov      m_logsize(%ebx),%edi
+	shl      $1,%edi
+.endm
+
+// Successful kickAdd() return.
+.macro kickEnd
+	mov      save_ebx(%esp),%ebx
+	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
+	FREE
+	mov      $1,%eax
+	RET
+.endm
+
+// Executed at the end of each (unsuccessful) kickAdd() iteration.
+// This further exposes how b1[] insertion works: the element inserted
+// at b[r_lo] from the top is in xmm0, and two elements from the bottom
+// are in xmm1; xmm1[0] goes to the alternative bucket at b[r_hi];
+// xmm1[1] is further used to shift the elements down the bucket.
+// During each iteration, b[r_hi] is loaded into xmm2 and (bsize>2) xmm3.
+.macro kickMore label
+	// No free slot at r_hi.
+	movq     %xmm1,%xmm0
+	movdqa   %xmm2,%xmm1
+	mov      r_hi,r_lo
+	// Loop control.
+	sub      $1,%edi
+	jge      \label
+.endm
+
+// Unsuccessful kickAdd() is followed by the tail call to a C routine,
+// which may resize the table.
+.macro tailCall tail
+	mov      save_ptr(%esp),r_ptr
+	mov      save_ebx(%esp),%ebx
+	mov      save_esi(%esp),%esi
+	mov      save_edi(%esp),%edi
+	FREE
+	movd     %xmm0,r_lo
+	pextrd   $1,%xmm0,r_hi
+	jmp      \tail
+.endm
+
+FUNC(has2st0)
+	hasBegin
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	pcmpeqq  %XMM0,%xmm1
 	pcmpeqq  (r_ptr,r_hi,1),%XMM0
 	por      %XMM0,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has2st0)
 
 FUNC(add2st0)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %xmm0,%xmm0
+	addBegin
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm3
@@ -118,20 +216,11 @@ FUNC(add2st0)
 	movdqa   %xmm4,%xmm2
 	pcmpeqq  %xmm0,%xmm4
 	por      %xmm4,%xmm3
-	pmovmskb %xmm3,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert2)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm3 NAME(insert2)
 END(add2st0)
 
 FUNC(insert2)
-	// Strategically bump set->cnt.
-	mov      save_ptr(%esp),r_ptr
-	addl     $1,m_cnt(r_ptr)
-	mov      m_bb(r_ptr),r_ptr
-	mov      %ebx,save_ebx(%esp)
+	insertBegin
 
 	// Blank values for b1[*] -> xmm3.
 	movd     r_lo,%xmm3
@@ -156,16 +245,9 @@ FUNC(insert2)
 	test     %ebx,%ebx
 	jnz      1f
 
-	// Nope, preparing for the kickAdd() loop.
-	mov      %esi,save_esi(%esp)
-	mov      %edi,save_edi(%esp)
-	mov      save_ptr(%esp),%ebx
-	mov      m_mask(%ebx),%esi
-	mov      m_logsize(%ebx),%edi
-	shl      $1,%edi
+	gonnaKick
 	jmp      2f
 
-	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
 	// Is it b1[] or b2[]? bsf returns 0, 4, 8, or 12.
 	test     $4,%ebx
@@ -173,14 +255,9 @@ FUNC(insert2)
 	// Is it [0] or [1]?
 	shr      $3,%ebx
 	lea      (r_lo,%ebx,8),r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
 	movq     %xmm0,(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
+	justEnd
 
-	// Loop: the element in xmm0 is pushed at eax from the top.
-	// The element kicked out from the bottom is in xmm1.
 	.align   AlignLoop
 2:	palignr  $8,%xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
@@ -207,48 +284,17 @@ FUNC(insert2)
 	test     %ebx,%ebx
 	jnz      3f
 
-	// No free slot at r_hi.
-	movq     %xmm1,%xmm0
-	movdqa   %xmm2,%xmm1
-	mov      r_hi,r_lo
+	kickMore 2b
+	tailCall TAIL(insert2)
 
-	// Loop control.
-	sub      $1,%edi
-	jge      2b
-
-	// Broke out of the loop.  Too bad.
-	mov      save_ptr(%esp),r_ptr
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
-	FREE
-	movd     %xmm0,r_lo
-	pextrd   $1,%xmm0,r_hi
-	jmp      TAIL(insert2)
-
-	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
 	add      %ebx,r_hi
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
 	movq     %xmm1,(r_ptr,r_hi,1)
-	FREE
-	mov      $1,%eax
-	RET
+	kickEnd
 END(insert2)
 
 FUNC(add2st1)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm5
-	movdDup  %xmm0,%xmm0
-	mov      m_bb(r_ptr),r_ptr
+	addBegin st=%xmm5
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm3
@@ -260,23 +306,11 @@ FUNC(add2st1)
 	movdqa   %xmm4,%xmm2
 	pcmpeqq  %xmm0,%xmm4
 	por      %xmm4,%xmm3
-	pmovmskb %xmm3,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert2)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm3 NAME(insert2)
 END(add2st1)
 
 FUNC(has2st1)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm3
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %XMM0,%XMM0
+	hasBegin st=%xmm3
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -285,20 +319,13 @@ FUNC(has2st1)
 	pcmpeqq  (r_ptr,r_hi,1),%XMM0
 	por      %xmm3,%xmm1
 	por      %XMM0,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has2st1)
 
 FUNC(has3st0)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
+	hasBegin
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdDup  %XMM0,%XMM0
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
 	pcmpeqq  %XMM0,%xmm1
@@ -308,22 +335,13 @@ FUNC(has3st0)
 	pcmpeqq  %XMM0,%xmm3
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has3st0)
 
 FUNC(add3st0)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
+	addBegin
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdDup  %xmm0,%xmm0
 	movdqu   (r_ptr,r_lo,8),%xmm4
 	movdqu   (r_ptr,r_hi,8),%xmm5
 	movq     16(r_ptr,r_lo,8),%xmm3
@@ -336,20 +354,11 @@ FUNC(add3st0)
 	movdqa   %xmm3,%xmm5
 	pcmpeqq  %xmm0,%xmm5
 	por      %xmm5,%xmm4
-	pmovmskb %xmm4,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert3)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm4 NAME(insert3)
 END(add3st0)
 
 FUNC(insert3)
-	// Strategically bump set->cnt.
-	mov      save_ptr(%esp),r_ptr
-	addl     $1,m_cnt(r_ptr)
-	mov      m_bb(r_ptr),r_ptr
-	mov      %ebx,save_ebx(%esp)
+	insertBegin
 
 	// Blank values for b2[*] -> xmm6.
 	movd     r_hi,%xmm6
@@ -384,16 +393,9 @@ FUNC(insert3)
 	test     %ebx,%ebx
 	jnz      1f
 
-	// Nope, preparing for the kickAdd() loop.
-	mov      %esi,save_esi(%esp)
-	mov      %edi,save_edi(%esp)
-	mov      save_ptr(%esp),%ebx
-	mov      m_mask(%ebx),%esi
-	mov      m_logsize(%ebx),%edi
-	shl      $1,%edi
+	gonnaKick
 	jmp      2f
 
-	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8) vs (2, 6, 10).
 	test     $2,%ebx
@@ -401,14 +403,9 @@ FUNC(insert3)
 	// Is it [0], [1] or [2]?
 	shr      $2,%ebx
 	add      %ebx,r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
 	movq     %xmm0,(r_ptr,r_lo,8)
-	mov      $1,%eax
-	RET
+	justEnd
 
-	// Loop: the element in xmm0 is pushed at eax from the top.
-	// The element kicked out from the bottom is in xmm1.
 	.align   AlignLoop
 2:	palignr  $8,%xmm1,%xmm3
 	movdqu   %xmm3,(r_ptr,r_lo,8)
@@ -440,49 +437,18 @@ FUNC(insert3)
 	and      $0x0fff,%ebx
 	jnz      3f
 
-	// No free slot at r_hi.
-	movq     %xmm1,%xmm0
-	movdqa   %xmm2,%xmm1
-	mov      r_hi,r_lo
+	kickMore 2b
+	tailCall TAIL(insert3)
 
-	// Loop control.
-	sub      $1,%edi
-	jge      2b
-
-	// Broke out of the loop.  Too bad.
-	mov      save_ptr(%esp),r_ptr
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
-	FREE
-	movd     %xmm0,r_lo
-	pextrd   $1,%xmm0,r_hi
-	jmp      TAIL(insert3)
-
-	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
 	shr      $2,%ebx
 	add      %ebx,r_hi
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
 	movq     %xmm1,(r_ptr,r_hi,8)
-	FREE
-	mov      $1,%eax
-	RET
+	kickEnd
 END(insert3)
 
 FUNC(add3st1)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm5
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %xmm0,%xmm0
+	addBegin st=%xmm5
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   (r_ptr,r_lo,8),%xmm4
@@ -499,23 +465,11 @@ FUNC(add3st1)
 	movdqa   %xmm5,%xmm3
 	pcmpeqq  %xmm0,%xmm5
 	por      %xmm5,%xmm4
-	pmovmskb %xmm4,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert3)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm4 NAME(insert3)
 END(add3st1)
 
 FUNC(has3st1)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm3
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %XMM0,%XMM0
+	hasBegin st=%xmm3
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   8(r_ptr,r_lo,8),%xmm1
@@ -529,18 +483,11 @@ FUNC(has3st1)
 	pcmpeqq  %XMM0,%xmm3
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has3st1)
 
 FUNC(has4st0)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %XMM0,%XMM0
+	hasBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -553,20 +500,11 @@ FUNC(has4st0)
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
 	por      %XMM0,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has4st0)
 
 FUNC(add4st0)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %xmm0,%xmm0
+	addBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm5
@@ -584,20 +522,11 @@ FUNC(add4st0)
 	pcmpeqq  %xmm0,%xmm7
 	por      %xmm7,%xmm6
 	por      %xmm6,%xmm5
-	pmovmskb %xmm5,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert4)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm5 NAME(insert4)
 END(add4st0)
 
 FUNC(insert4)
-	// Strategically bump set->cnt.
-	mov      save_ptr(%esp),r_ptr
-	addl     $1,m_cnt(r_ptr)
-	mov      m_bb(r_ptr),r_ptr
-	mov      %ebx,save_ebx(%esp)
+	insertBegin
 
 	// Blank values for b2[*] -> xmm6.
 	movd     r_hi,%xmm6
@@ -627,16 +556,9 @@ FUNC(insert4)
 	test     %ebx,%ebx
 	jnz      1f
 
-	// Nope, preparing for the kickAdd() loop.
-	mov      %esi,save_esi(%esp)
-	mov      %edi,save_edi(%esp)
-	mov      save_ptr(%esp),%ebx
-	mov      m_mask(%ebx),%esi
-	mov      m_logsize(%ebx),%edi
-	shl      $1,%edi
+	gonnaKick
 	jmp      2f
 
-	// Successful justAdd() lands here.
 1:	bsf      %ebx,%ebx
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8, 12) vs (2, 6, 10, 14).
 	test     $2,%ebx
@@ -644,14 +566,9 @@ FUNC(insert4)
 	// Is it [0], [1], [2], or [3]?
 	shr      $2,%ebx
 	lea      (r_lo,%ebx,8),r_lo
-	mov      save_ebx(%esp),%ebx
-	FREE
 	movq     %xmm0,(r_ptr,r_lo,1)
-	mov      $1,%eax
-	RET
+	justEnd
 
-	// Loop: the element in xmm0 is pushed at eax from the top.
-	// The element kicked out from the bottom is in xmm1.
 	.align   AlignLoop
 2:	palignr  $8,%xmm3,%xmm0
 	movdqa   %xmm0,16(r_ptr,r_lo,1)
@@ -684,48 +601,17 @@ FUNC(insert4)
 	test     %ebx,%ebx
 	jnz      3f
 
-	// No free slot at r_hi.
-	movq     %xmm1,%xmm0
-	movdqa   %xmm2,%xmm1
-	mov      r_hi,r_lo
+	kickMore 2b
+	tailCall TAIL(insert4)
 
-	// Loop control.
-	sub      $1,%edi
-	jge      2b
-
-	// Broke out of the loop.  Too bad.
-	mov      save_ptr(%esp),r_ptr
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
-	FREE
-	movd     %xmm0,r_lo
-	pextrd   $1,%xmm0,r_hi
-	jmp      TAIL(insert4)
-
-	// Successful kickAdd() lands here.
 3:	bsf      %ebx,%ebx
 	lea      (r_hi,%ebx,2),r_hi
-	mov      save_ebx(%esp),%ebx
-	mov      save_esi(%esp),%esi
-	mov      save_edi(%esp),%edi
 	movq     %xmm1,(r_ptr,r_hi,1)
-	FREE
-	mov      $1,%eax
-	RET
+	kickEnd
 END(insert4)
 
 FUNC(add4st1)
-	REG3
-	ALLOC
-	SAVE_PTR
-	movd     r_lo,%xmm0
-	pinsrd   $1,r_hi,%xmm0
-	movdqa   m_stash(r_ptr),%xmm7
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %xmm0,%xmm0
+	addBegin st=%xmm7
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm5
@@ -745,23 +631,11 @@ FUNC(add4st1)
 	pcmpeqq  %xmm0,%xmm7
 	por      %xmm7,%xmm6
 	por      %xmm6,%xmm5
-	pmovmskb %xmm5,r_ptr
-	test     r_ptr,r_ptr
-	jz       NAME(insert4)
-	FREE
-	xor      %eax,%eax
-	RET
+	addEnd   %xmm5 NAME(insert4)
 END(add4st1)
 
 FUNC(has4st1)
-	REG3
-	movd     r_lo,%XMM0
-	pinsrd   $1,r_hi,%XMM0
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
-	movdqa   m_stash(r_ptr),%xmm3
-	mov      m_bb(r_ptr),r_ptr
-	movdDup  %XMM0,%XMM0
+	hasBegin st=%xmm3
 	shl      $5,r_lo
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
@@ -776,6 +650,5 @@ FUNC(has4st1)
 	por      %xmm2,%xmm1
 	por      %xmm3,%xmm1
 	por      %XMM0,%xmm1
-	pmovmskb %xmm1,%eax
-	RET
+	hasEnd   %xmm1
 END(has4st1)
