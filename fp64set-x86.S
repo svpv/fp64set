@@ -18,8 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#define NAME(name) fp64set_##name##sse4
-#define TAIL(name) fp64set_##name##tail
+#ifndef FP64SET_X86_S
+#define FP64SET_X86_S
 
 #define AlignFunc  32
 #define AlignLoop  32
@@ -74,9 +74,6 @@
 #define save_esi   8
 #define save_edi   12
 #endif
-
-// movddup vs punpcklqdq on the same register
-#define movdDup movddup
 
 // has() only clobbers %XMM0 and %xmm1-%xmm3.
 #define XMM0 xmm4
@@ -193,6 +190,22 @@
 	pextrd   $1,%xmm0,r_hi
 	jmp      \tail
 .endm
+
+#define TAIL(name) fp64set_##name##tail
+
+// SSE2 routines
+#define NAME(name) fp64set_##name##sse2
+#define movdDup punpcklqdq
+
+#include "fp64set-x86.S"
+
+#undef NAME
+#undef movDdup
+
+// SSE4 routines
+#define NAME(name) fp64set_##name##sse4
+
+#endif // FP64SET_X86_S
 
 FUNC(has2st0)
 	hasBegin
