@@ -193,17 +193,74 @@
 
 #define TAIL(name) fp64set_##name##tail
 
+// In has() routines, we compare quadwords with pcmpeqq (two at a time) and
+// combine comparisons with por.  With SSE2 however, we can only compare
+// doublewords with pcmpeqd.  We fix the discrepancy by using the modified
+// por step: two comparisons are packed in such a way that transforms
+// qword-all-1s to dword-all-1s.  It then suffices to check the result
+// with pcmpeqd against all-1s.
+.macro porQQ xmm2 xmm1
+	packssdw \xmm2,\xmm1
+	pcmpeqd  \xmm2,\xmm2
+	pcmpeqd  \xmm2,\xmm1
+.endm
+
+// A similar technique can be used to combine 3 results, as if with two
+// por instructions.  Note that the first arg is always a comparison,
+// and the second arg is the packed result.
+.macro porQ3ac xmm2 xmm1
+	packssdw \xmm2,\xmm1
+.endm
+.macro porQ3bc xmm2 xmm1
+	packssdw \xmm2,\xmm2
+	packsswb \xmm2,\xmm1
+	pcmpeqw  \xmm2,\xmm2
+	pcmpeqw  \xmm2,\xmm1
+.endm
+
+// To combine 4 results, porQQ+porQQ+por can be used, total 3+2+1=6 instructions.
+// The following scheme shows, however, that this can be done with 5 instructions.
+.macro porQ4ab xmm2 xmm1
+	packssdw \xmm2,\xmm1
+.endm
+.macro porQ4cd xmm2 xmm1
+	packssdw \xmm2,\xmm1
+.endm
+.macro porQ4bd xmm2 xmm1
+	packsswb \xmm2,\xmm1
+	pcmpeqw  \xmm2,\xmm2
+	pcmpeqw  \xmm2,\xmm1
+.endm
+
+// Finally, any comparison can be combined with previously packed results.
+// This relies on the fact that packssdw preserves non-zero in the low part;
+// the high part is permuted and ANDed: [1a,1b,2a,2b] x [1b,1a,2b,2a].
+.macro porQD xmm2 xmm1
+	packssdw \xmm2,\xmm1
+	pshufhw  $0xb1,\xmm1,\xmm2
+	pand     \xmm2,\xmm1
+.endm
+
 // SSE2 routines
 #define NAME(name) fp64set_##name##sse2
 #define movdDup punpcklqdq
+#define pcmpeqQ pcmpeqd
 
 #include "fp64set-x86.S"
 
 #undef NAME
 #undef movDdup
+#undef pcmpeqQ
 
 // SSE4 routines
 #define NAME(name) fp64set_##name##sse4
+#define porQQ   por
+#define porQD   por
+#define porQ3ac por
+#define porQ3bc por
+#define porQ4ab por
+#define porQ4cd por
+#define porQ4bd por
 
 #endif // FP64SET_X86_S
 
@@ -212,9 +269,9 @@ FUNC(has2st0)
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
-	pcmpeqq  %XMM0,%xmm1
-	pcmpeqq  (r_ptr,r_hi,1),%XMM0
-	por      %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm1
+	pcmpeqQ  (r_ptr,r_hi,1),%XMM0
+	porQQ    %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has2st0)
 
@@ -225,10 +282,10 @@ FUNC(add2st0)
 	movdqa   (r_ptr,r_lo,1),%xmm3
 	movdqa   (r_ptr,r_hi,1),%xmm4
 	movdqa   %xmm3,%xmm1
-	pcmpeqq  %xmm0,%xmm3
+	pcmpeqQ  %xmm0,%xmm3
 	movdqa   %xmm4,%xmm2
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm4,%xmm3
+	pcmpeqQ  %xmm0,%xmm4
+	porQQ    %xmm4,%xmm3
 	addEnd   %xmm3 NAME(insert2)
 END(add2st0)
 
@@ -312,13 +369,13 @@ FUNC(add2st1)
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm3
 	movdqa   (r_ptr,r_hi,1),%xmm4
-	pcmpeqq  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm3,%xmm1
-	pcmpeqq  %xmm0,%xmm3
-	por      %xmm5,%xmm3
+	pcmpeqQ  %xmm0,%xmm3
+	porQ3ac  %xmm5,%xmm3
 	movdqa   %xmm4,%xmm2
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm4,%xmm3
+	pcmpeqQ  %xmm0,%xmm4
+	porQ3bc  %xmm4,%xmm3
 	addEnd   %xmm3 NAME(insert2)
 END(add2st1)
 
@@ -327,11 +384,11 @@ FUNC(has2st1)
 	shl      $4,r_lo
 	shl      $4,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
-	pcmpeqq  %XMM0,%xmm3
-	pcmpeqq  %XMM0,%xmm1
-	pcmpeqq  (r_ptr,r_hi,1),%XMM0
-	por      %xmm3,%xmm1
-	por      %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm3
+	pcmpeqQ  %XMM0,%xmm1
+	pcmpeqQ  (r_ptr,r_hi,1),%XMM0
+	porQ3ac  %xmm3,%xmm1
+	porQ3bc  %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has2st1)
 
@@ -341,13 +398,13 @@ FUNC(has3st0)
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
-	pcmpeqq  %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm1
 	movq     (r_ptr,r_lo,8),%xmm3
 	movhps   (r_ptr,r_hi,8),%xmm3
-	pcmpeqq  %XMM0,%xmm2
-	pcmpeqq  %XMM0,%xmm3
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
+	pcmpeqQ  %XMM0,%xmm2
+	porQ3ac  %xmm2,%xmm1
+	pcmpeqQ  %XMM0,%xmm3
+	porQ3bc  %xmm3,%xmm1
 	hasEnd   %xmm1
 END(has3st0)
 
@@ -360,13 +417,13 @@ FUNC(add3st0)
 	movq     16(r_ptr,r_lo,8),%xmm3
 	movhps   16(r_ptr,r_hi,8),%xmm3
 	movdqa   %xmm4,%xmm1
-	pcmpeqq  %xmm0,%xmm4
+	pcmpeqQ  %xmm0,%xmm4
 	movdqa   %xmm5,%xmm2
-	pcmpeqq  %xmm0,%xmm5
-	por      %xmm5,%xmm4
+	pcmpeqQ  %xmm0,%xmm5
+	porQ3ac  %xmm5,%xmm4
 	movdqa   %xmm3,%xmm5
-	pcmpeqq  %xmm0,%xmm5
-	por      %xmm5,%xmm4
+	pcmpeqQ  %xmm0,%xmm5
+	porQ3bc  %xmm5,%xmm4
 	addEnd   %xmm4 NAME(insert3)
 END(add3st0)
 
@@ -487,15 +544,15 @@ FUNC(has3st1)
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   8(r_ptr,r_lo,8),%xmm1
 	movdqu   8(r_ptr,r_hi,8),%xmm2
-	pcmpeqq  %XMM0,%xmm3
-	pcmpeqq  %XMM0,%xmm1
-	pcmpeqq  %XMM0,%xmm2
-	por      %xmm3,%xmm1
+	pcmpeqQ  %XMM0,%xmm3
+	pcmpeqQ  %XMM0,%xmm1
+	porQ4ab  %xmm3,%xmm1
 	movq     (r_ptr,r_lo,8),%xmm3
 	movhps   (r_ptr,r_hi,8),%xmm3
-	pcmpeqq  %XMM0,%xmm3
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
+	pcmpeqQ  %XMM0,%xmm2
+	pcmpeqQ  %XMM0,%xmm3
+	porQ4cd  %xmm3,%xmm2
+	porQ4bd  %xmm2,%xmm1
 	hasEnd   %xmm1
 END(has3st1)
 
@@ -505,14 +562,14 @@ FUNC(has4st0)
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm1
 	movdqa   16(r_ptr,r_lo,1),%xmm3
-	pcmpeqq  %XMM0,%xmm2
-	pcmpeqq  %XMM0,%xmm3
-	pcmpeqq  16(r_ptr,r_hi,1),%XMM0
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
-	por      %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm2
+	pcmpeqQ  %XMM0,%xmm3
+	pcmpeqQ  16(r_ptr,r_hi,1),%XMM0
+	porQ4ab  %xmm2,%xmm1
+	porQ4cd  %xmm3,%XMM0
+	porQ4bd  %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has4st0)
 
@@ -523,18 +580,18 @@ FUNC(add4st0)
 	movdqa   (r_ptr,r_lo,1),%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm6
 	movdqa   %xmm5,%xmm1
-	pcmpeqq  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm6,%xmm2
-	pcmpeqq  %xmm0,%xmm6
-	por      %xmm6,%xmm5
+	pcmpeqQ  %xmm0,%xmm6
+	porQ4ab  %xmm6,%xmm5
 	movdqa   16(r_ptr,r_lo,1),%xmm6
 	movdqa   16(r_ptr,r_hi,1),%xmm7
 	movdqa   %xmm6,%xmm3
-	pcmpeqq  %xmm0,%xmm6
+	pcmpeqQ  %xmm0,%xmm6
 	movdqa   %xmm7,%xmm4
-	pcmpeqq  %xmm0,%xmm7
-	por      %xmm7,%xmm6
-	por      %xmm6,%xmm5
+	pcmpeqQ  %xmm0,%xmm7
+	porQ4cd  %xmm7,%xmm6
+	porQ4bd  %xmm6,%xmm5
 	addEnd   %xmm5 NAME(insert4)
 END(add4st0)
 
@@ -629,21 +686,21 @@ FUNC(add4st1)
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm6
-	pcmpeqq  %xmm0,%xmm7
+	pcmpeqQ  %xmm0,%xmm7
 	movdqa   %xmm5,%xmm1
-	pcmpeqq  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm5
+	porQ4ab  %xmm7,%xmm5
+	movdqa   16(r_ptr,r_lo,1),%xmm7
 	movdqa   %xmm6,%xmm2
-	pcmpeqq  %xmm0,%xmm6
-	por      %xmm7,%xmm6
-	por      %xmm6,%xmm5
-	movdqa   16(r_ptr,r_lo,1),%xmm6
+	pcmpeqQ  %xmm0,%xmm6
+	movdqa   %xmm7,%xmm3
+	pcmpeqQ  %xmm0,%xmm7
+	porQ4cd  %xmm7,%xmm6
 	movdqa   16(r_ptr,r_hi,1),%xmm7
-	movdqa   %xmm6,%xmm3
-	pcmpeqq  %xmm0,%xmm6
+	porQ4bd  %xmm6,%xmm5
 	movdqa   %xmm7,%xmm4
-	pcmpeqq  %xmm0,%xmm7
-	por      %xmm7,%xmm6
-	por      %xmm6,%xmm5
+	pcmpeqQ  %xmm0,%xmm7
+	porQD    %xmm7,%xmm5
 	addEnd   %xmm5 NAME(insert4)
 END(add4st1)
 
@@ -653,15 +710,15 @@ FUNC(has4st1)
 	shl      $5,r_hi
 	movdqa   (r_ptr,r_lo,1),%xmm1
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %XMM0,%xmm3
-	pcmpeqq  %XMM0,%xmm1
-	por      %xmm3,%xmm1
+	pcmpeqQ  %XMM0,%xmm3
+	pcmpeqQ  %XMM0,%xmm1
+	porQ4ab  %xmm3,%xmm1
 	movdqa   16(r_ptr,r_lo,1),%xmm3
-	pcmpeqq  %XMM0,%xmm2
-	pcmpeqq  %XMM0,%xmm3
-	pcmpeqq  16(r_ptr,r_hi,1),%XMM0
-	por      %xmm2,%xmm1
-	por      %xmm3,%xmm1
-	por      %XMM0,%xmm1
+	pcmpeqQ  %XMM0,%xmm2
+	pcmpeqQ  %XMM0,%xmm3
+	pcmpeqQ  16(r_ptr,r_hi,1),%XMM0
+	porQ4cd  %xmm3,%xmm2
+	porQ4bd  %xmm2,%xmm1
+	porQD    %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has4st1)
