@@ -80,9 +80,14 @@
 
 // Common setup for has() and add().
 // The fingerprint goes into \xmm0.
-.macro argBegin xmm0 st
+.macro argBegin xmm0 st sse4
 	movd     r_lo,\xmm0
+    .ifnb \sse4
 	pinsrd   $1,r_hi,\xmm0
+    .else
+	movd     r_hi,%xmm1
+	punpckldq %xmm1,\xmm0
+    .endif
 	and      m_mask(r_ptr),r_lo
 	and      m_mask(r_ptr),r_hi
     .ifnb \st
@@ -92,9 +97,9 @@
 	movdDup  \xmm0,\xmm0
 .endm
 
-.macro hasBegin st
+.macro hasBegin st sse4
 	REG3
-	argBegin %XMM0 \st
+	argBegin %XMM0,\st,\sse4
 .endm
 
 .macro hasEnd xmm
@@ -103,11 +108,11 @@
 .endm
 
 // add() routines start in a manner similar to has().
-.macro addBegin st
+.macro addBegin st sse4
 	REG3
 	ALLOC
 	SAVE_PTR
-	argBegin %xmm0 \st
+	argBegin %xmm0,\st,\sse4
 .endm
 
 // If the element is already added, add() returns early.
@@ -261,6 +266,8 @@
 #define porQ4ab por
 #define porQ4cd por
 #define porQ4bd por
+#define hasBegin hasBegin sse4=1
+#define andBegin andBegin sse4=1
 
 #endif // FP64SET_X86_S
 
