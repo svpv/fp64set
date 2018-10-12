@@ -210,9 +210,20 @@
 	pcmpeqd  \xmm2,\xmm1
 .endm
 
-// A similar technique can be used to combine 3 results, as if with two
-// por instructions.  Note that the first arg is always a comparison,
-// and the second arg is the packed result.
+// porQQ can also be viewed as a packing primitive.
+.macro packQQ xmm2 xmm1
+	porQQ    \xmm2,\xmm1
+.endm
+
+// Packing with interleaving.
+.macro blendQQ xmm2 xmm1
+	packQQ   \xmm2,\xmm1
+	// Swap the middle elements.
+	pshufd   $0xd8,\xmm1,\xmm1
+.endm
+
+// A technique similar to porQQ can be used to combine 3 results,
+// as if with two por instructions.
 .macro porQ3ac xmm2 xmm1
 	packssdw \xmm2,\xmm1
 .endm
@@ -282,6 +293,7 @@
 #undef pcmpeqQ
 
 // SSE4 routines
+#define SSE4 1
 #define NAME(name) fp64set_##name##sse4
 #define porQQ   por
 #define porQD   por
@@ -290,6 +302,9 @@
 #define porQ4ab por
 #define porQ4cd por
 #define porQ4bd por
+#define movSD   pblendw $0x0f,
+#define packQQ  packssdw
+#define blendQQ pblendw $0xcc,
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
 #define setBlank setBlank_sse4
@@ -326,14 +341,14 @@ FUNC(insert2)
 
 	// Check for free slots in b1[*] -> xmm3.
 	setBlank r_lo,%xmm3 setAll0s=%xmm5
-	pcmpeqq  %xmm1,%xmm3
+	pcmpeqQ  %xmm1,%xmm3
 
 	// Check for free slots in b2[*] -> xmm4.
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
-	pcmpeqq  %xmm2,%xmm4
+	pcmpeqQ  %xmm2,%xmm4
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
-	pblendw  $0xcc,%xmm4,%xmm3
+	blendQQ  %xmm4,%xmm3
 	pmovmskb %xmm3,%ebx
 	test     %ebx,%ebx
 	jnz      1f
@@ -449,26 +464,42 @@ END(add3st0)
 FUNC(insert3)
 	insertBegin
 
+	// Numbers correspond to XMM registers.
+	// +---+---+
+	// |   3   |
+	// +---+---+
+	// |   |   |
+	// + 1 + 2 +
+	// |   |   |
+	// +---+---+
+	//   ^   ^
+	//  buckets
+
 	// Check for free slots in b2[0,1] -> xmm2.
 	setBlank r_hi,%xmm6 setAll0s=%xmm5
-	pcmpeqq  %xmm6,%xmm2
+	pcmpeqQ  %xmm6,%xmm2
 
 	// Prepare blank values for b1[*] -> xmm4, b1[*] + b2[*] -> xmm6.
 	setBlank r_lo,%xmm4 useAll0s=%xmm5
-	pblendw  $0x0f,%xmm4,%xmm6
+	movSD    %xmm4,%xmm6
 
-	// Check for free slots in b1[0,1] -> xmm4.
-	pcmpeqq  %xmm1,%xmm4
+	// Check for free slots in b1[0,1] -> xmm4, b1[2] + b2[2] -> xmm6.
+	pcmpeqQ  %xmm1,%xmm4
+	pcmpeqQ  %xmm3,%xmm6
 
-	// Combine (b1[0],b2[0],b1[1],b2[1]) -> xmm4.
+	// Combine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],x,x) -> mask.
+    #if SSE4
+	pshufd   $0x88,%xmm6,%xmm6
 	pblendw  $0xcc,%xmm2,%xmm4
-
-	// Check for free slots in b1[2],b2[2] -> xmm6.
-	pcmpeqq  %xmm3,%xmm6
-
-	// Recombine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],b1[2],b2[2]) -> mask.
-	pshufd   $0xd8,%xmm6,%xmm6
 	packssdw %xmm6,%xmm4
+    #else
+	packssdw %xmm6,%xmm6
+	packssdw %xmm2,%xmm4
+	pshufd   $0xd8,%xmm4,%xmm4
+	packsswb %xmm6,%xmm4
+	pcmpeqw  %xmm2,%xmm2
+	pcmpeqw  %xmm2,%xmm4
+    #endif
 	pmovmskb %xmm4,%ebx
 	test     %ebx,%ebx
 	jnz      1f
@@ -604,21 +635,41 @@ END(add4st0)
 FUNC(insert4)
 	insertBegin
 
+	// +---+---+
+	// |   |   |
+	// + 3 + 4 +
+	// |   |   |
+	// +---+---+
+	// |   |   |
+	// + 1 + 2 +
+	// |   |   |
+	// +---+---+
+
 	// Check for free slots in b2[*] -> xmm2.
 	setBlank r_hi,%xmm6 setAll0s=%xmm5
-	pcmpeqq  %xmm6,%xmm2
-	pcmpeqq  %xmm6,%xmm4
+	pcmpeqQ  %xmm6,%xmm2
+	pcmpeqQ  %xmm6,%xmm4
 	packssdw %xmm4,%xmm2
 
 	// Check for free slots in b1[*] -> xmm6.
 	setBlank r_lo,%xmm6 useAll0s=%xmm5
 	movdqa   %xmm3,%xmm4
-	pcmpeqq  %xmm6,%xmm4
-	pcmpeqq  %xmm1,%xmm6
+	pcmpeqQ  %xmm6,%xmm4
+	pcmpeqQ  %xmm1,%xmm6
 	packssdw %xmm4,%xmm6
 
-	// Recombine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],b1[3],b2[3]) -> mask.
+	// Combine (b1[0],b2[0],b1[1],b2[1],b1[2],b2[2],b1[3],b2[3]) -> mask.
+    #if SSE4
 	pblendw  $0xaa,%xmm2,%xmm6
+    #else
+	// SSE2 can't blend, so self-pack and interleve the low halves.
+	packsswb %xmm6,%xmm6
+	packsswb %xmm2,%xmm2
+	punpcklwd %xmm2,%xmm6
+	// Compensate for missing pcmpeqQ.
+	pcmpeqw  %xmm2,%xmm2
+	pcmpeqw  %xmm2,%xmm6
+    #endif
 	pmovmskb %xmm6,%ebx
 	test     %ebx,%ebx
 	jnz      1f
