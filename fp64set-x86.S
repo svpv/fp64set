@@ -246,6 +246,30 @@
 	pand     \xmm2,\xmm1
 .endm
 
+// Unoccupied slots have blank values.  The blank value for the bucket at bb[0]
+// is UINT64_MAX, the blank value for all other buckets is 0.
+.macro setBlank lohi xmm setAll0s useAll0s
+	movd     \lohi,\xmm
+    .ifnb \setAll0s
+	pxor     \setAll0s,\setAll0s
+	pcmpeqd  \setAll0s,\xmm
+    .else
+	pcmpeqd  \useAll0s,\xmm
+    .endif
+	pshufd   $0,\xmm,\xmm
+.endm
+
+.macro setBlank_sse4 lohi xmm setAll0s useAll0s
+	movd     \lohi,\xmm
+	movddup  \xmm,\xmm
+    .ifnb \setAll0s
+	pxor     \setAll0s,\setAll0s
+	pcmpeqq  \setAll0s,\xmm
+    .else
+	pcmpeqq  \useAll0s,\xmm
+    .endif
+.endm
+
 // SSE2 routines
 #define NAME(name) fp64set_##name##sse2
 #define movdDup punpcklqdq
@@ -268,6 +292,7 @@
 #define porQ4bd por
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
+#define setBlank setBlank_sse4
 
 #endif // FP64SET_X86_S
 
@@ -299,21 +324,12 @@ END(add2st0)
 FUNC(insert2)
 	insertBegin
 
-	// Blank values for b1[*] -> xmm3.
-	movd     r_lo,%xmm3
-	pxor     %xmm5,%xmm5
-	movdDup  %xmm3,%xmm3
-	pcmpeqq  %xmm5,%xmm3
-
 	// Check for free slots in b1[*] -> xmm3.
+	setBlank r_lo,%xmm3 setAll0s=%xmm5
 	pcmpeqq  %xmm1,%xmm3
 
-	// Blank values for b2[*] -> xmm4.
-	movd     r_hi,%xmm4
-	movdDup  %xmm4,%xmm4
-	pcmpeqq  %xmm2,%xmm4
-
 	// Check for free slots in b2[*] -> xmm4.
+	setBlank r_hi,%xmm4 useAll0s=%xmm5
 	pcmpeqq  %xmm2,%xmm4
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
@@ -349,12 +365,8 @@ FUNC(insert2)
 	cmp      r_lo,r_hi
 	cmove    %ebx,r_hi
 
-	// Make the blank value for bb[r_hi].
-	movd     r_hi,%xmm3
-	movdDup  %xmm3,%xmm3
-	pcmpeqq  %xmm5,%xmm3
-
-	// Check for empty slots and insert.
+	// Check for empty slots at bb[r_hi].
+	setBlank r_hi,%xmm3 useAll0s=%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm2
 	pcmpeqq  %xmm2,%xmm3
 	pmovmskb %xmm3,%ebx
@@ -437,21 +449,12 @@ END(add3st0)
 FUNC(insert3)
 	insertBegin
 
-	// Blank values for b2[*] -> xmm6.
-	movd     r_hi,%xmm6
-	pxor     %xmm5,%xmm5
-	movdDup  %xmm6,%xmm6
-	pcmpeqq  %xmm5,%xmm6
-
 	// Check for free slots in b2[0,1] -> xmm2.
+	setBlank r_hi,%xmm6 setAll0s=%xmm5
 	pcmpeqq  %xmm6,%xmm2
 
-	// Blank values for b1[*] -> xmm4.
-	movd     r_lo,%xmm4
-	movdDup  %xmm4,%xmm4
-	pcmpeqq  %xmm5,%xmm4
-
-	// Blank values for b1[*] + b2[*] -> xmm6.
+	// Prepare blank values for b1[*] -> xmm4, b1[*] + b2[*] -> xmm6.
+	setBlank r_lo,%xmm4 useAll0s=%xmm5
 	pblendw  $0x0f,%xmm4,%xmm6
 
 	// Check for free slots in b1[0,1] -> xmm4.
@@ -498,12 +501,8 @@ FUNC(insert3)
 	cmp      r_lo,r_hi
 	cmove    %ebx,r_hi
 
-	// Make the blank value for bb[r_hi].
-	movd     r_hi,%xmm4
-	movdDup  %xmm4,%xmm4
-	pcmpeqq  %xmm5,%xmm4
-
-	// Check for empty slots and insert.
+	// Check for empty slots at bb[r_hi].
+	setBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqu   (r_ptr,r_hi,8),%xmm2
 	movq     16(r_ptr,r_hi,8),%xmm3
 	movdqa   %xmm2,%xmm6
@@ -605,23 +604,14 @@ END(add4st0)
 FUNC(insert4)
 	insertBegin
 
-	// Blank values for b2[*] -> xmm6.
-	movd     r_hi,%xmm6
-	pxor     %xmm5,%xmm5
-	movdDup  %xmm6,%xmm6
-	pcmpeqq  %xmm5,%xmm6
-
 	// Check for free slots in b2[*] -> xmm2.
+	setBlank r_hi,%xmm6 setAll0s=%xmm5
 	pcmpeqq  %xmm6,%xmm2
 	pcmpeqq  %xmm6,%xmm4
 	packssdw %xmm4,%xmm2
 
-	// Blank values for b1[*] -> xmm6.
-	movd     r_lo,%xmm6
-	movdDup  %xmm6,%xmm6
-	pcmpeqq  %xmm5,%xmm6
-
 	// Check for free slots in b1[*] -> xmm6.
+	setBlank r_lo,%xmm6 useAll0s=%xmm5
 	movdqa   %xmm3,%xmm4
 	pcmpeqq  %xmm6,%xmm4
 	pcmpeqq  %xmm1,%xmm6
@@ -662,12 +652,8 @@ FUNC(insert4)
 	cmp      r_lo,r_hi
 	cmove    %ebx,r_hi
 
-	// Make the blank value for bb[r_hi].
-	movd     r_hi,%xmm4
-	movdDup  %xmm4,%xmm4
-	pcmpeqq  %xmm5,%xmm4
-
-	// Check for empty slots and insert.
+	// Check for empty slots at bb[r_hi].
+	setBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm2
 	movdqa   16(r_ptr,r_hi,1),%xmm3
 	movdqa   %xmm2,%xmm6
