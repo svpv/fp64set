@@ -383,7 +383,11 @@ FUNC(insert2)
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm3 useAll0s=%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm2
-	pcmpeqq  %xmm2,%xmm3
+	pcmpeqQ  %xmm2,%xmm3
+    #if !SSE4
+	pshufd   $0xb1,%xmm3,%xmm0
+	pand     %xmm0,%xmm3
+    #endif
 	pmovmskb %xmm3,%ebx
 	test     %ebx,%ebx
 	jnz      3f
@@ -536,11 +540,11 @@ FUNC(insert3)
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqu   (r_ptr,r_hi,8),%xmm2
 	movq     16(r_ptr,r_hi,8),%xmm3
-	movdqa   %xmm2,%xmm6
-	pcmpeqq  %xmm4,%xmm6
-	pcmpeqq  %xmm3,%xmm4
-	packssdw %xmm4,%xmm6
-	pmovmskb %xmm6,%ebx
+	movdqa   %xmm2,%xmm0
+	pcmpeqQ  %xmm4,%xmm0
+	pcmpeqQ  %xmm3,%xmm4
+	packQQ   %xmm4,%xmm0
+	pmovmskb %xmm0,%ebx
 	and      $0x0fff,%ebx
 	jnz      3f
 
@@ -707,11 +711,11 @@ FUNC(insert4)
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqa   (r_ptr,r_hi,1),%xmm2
 	movdqa   16(r_ptr,r_hi,1),%xmm3
-	movdqa   %xmm2,%xmm6
-	pcmpeqq  %xmm4,%xmm6
-	pcmpeqq  %xmm3,%xmm4
-	packssdw %xmm4,%xmm6
-	pmovmskb %xmm6,%ebx
+	movdqa   %xmm2,%xmm0
+	pcmpeqQ  %xmm4,%xmm0
+	pcmpeqQ  %xmm3,%xmm4
+	packQQ   %xmm4,%xmm0
+	pmovmskb %xmm0,%ebx
 	test     %ebx,%ebx
 	jnz      3f
 
