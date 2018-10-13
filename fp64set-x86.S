@@ -222,6 +222,24 @@
 	pshufd   $0xd8,\xmm1,\xmm1
 .endm
 
+// The kicking primitive.  The new item in xmm0 is "pressed" from the top,
+// and the resulting xmm0 is supposed to overwrite the memory where xmm1
+// comes from; xmm1 is not cobbered.
+//       |   |
+//       +   +
+//  xmm0 | 3 |           +---+
+//       +---+           | 3 |
+//              ->  xmm0 +   +
+//       +---+           | 2 |
+//       | 2 |           +---+
+//  xmm1 +   +
+//       | 1 |
+//       +---+
+.macro pressQQ xmm1 xmm0
+	shufpd   $2,\xmm1,\xmm0
+	shufpd   $1,\xmm0,\xmm0
+.endm
+
 // A technique similar to porQQ can be used to combine 3 results,
 // as if with two por instructions.
 .macro porQ3ac xmm2 xmm1
@@ -305,6 +323,7 @@
 #define movSD   pblendw $0x0f,
 #define packQQ  packssdw
 #define blendQQ pblendw $0xcc,
+#define pressQQ palignr $8,
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
 #define setBlank setBlank_sse4
@@ -367,7 +386,7 @@ FUNC(insert2)
 	justEnd
 
 	.align   AlignLoop
-2:	palignr  $8,%xmm1,%xmm0
+2:	pressQQ  %xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
 
 	// Find the alternative bucket for xmm1 at r_hi.
@@ -522,7 +541,7 @@ FUNC(insert3)
 	justEnd
 
 	.align   AlignLoop
-2:	palignr  $8,%xmm1,%xmm3
+2:	pressQQ  %xmm1,%xmm3
 	movdqu   %xmm3,(r_ptr,r_lo,8)
 	movq     %xmm0,16(r_ptr,r_lo,8)
 
@@ -692,9 +711,9 @@ FUNC(insert4)
 	justEnd
 
 	.align   AlignLoop
-2:	palignr  $8,%xmm3,%xmm0
+2:	pressQQ  %xmm3,%xmm0
 	movdqa   %xmm0,16(r_ptr,r_lo,1)
-	palignr  $8,%xmm1,%xmm3
+	pressQQ  %xmm1,%xmm3
 	movdqa   %xmm3,(r_ptr,r_lo,1)
 
 	// Find the alternative bucket for xmm1 at r_hi.
