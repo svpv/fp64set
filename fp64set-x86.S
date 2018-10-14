@@ -240,6 +240,31 @@
 	shufpd   $1,\xmm0,\xmm0
 .endm
 
+// Continuing with the above picture, xmm1 corresponds to the bucket
+// at bb[r_lo].  The fingerprint "1" has been kiked out of the bucket,
+// but xmm1 has not been clobbered.  So we need to find the alternative
+// bucket for xmm1[0], to insert from the top; this will be bb[r_hi].
+.macro altHi shl sse4
+	movd     %xmm1,r_hi
+    .ifnb \sse4
+	pextrd   $1,%xmm1,%ebx
+    .else
+	pshufd   $1,%xmm1,%xmm0
+	movd     %xmm0,%ebx
+    .endif
+	and      %esi,r_hi
+	and      %esi,%ebx
+    .ifnb \shl
+	shl      \shl,r_hi
+	shl      \shl,%ebx
+    .else
+	lea      (r_hi,r_hi,2),r_hi
+	lea      (%ebx,%ebx,2),%ebx
+    .endif
+	cmp      r_lo,r_hi
+	cmove    %ebx,r_hi
+.endm
+
 // A technique similar to porQQ can be used to combine 3 results,
 // as if with two por instructions.
 .macro porQ3ac xmm2 xmm1
@@ -324,6 +349,7 @@
 #define packQQ  packssdw
 #define blendQQ pblendw $0xcc,
 #define pressQQ palignr $8,
+#define altHi   altHi sse4=1
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
 #define setBlank setBlank_sse4
@@ -389,15 +415,7 @@ FUNC(insert2)
 2:	pressQQ  %xmm1,%xmm0
 	movdqa   %xmm0,(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm1 at r_hi.
-	movd     %xmm1,r_hi
-	pextrd   $1,%xmm1,%ebx
-	and      %esi,r_hi
-	and      %esi,%ebx
-	shl      $4,r_hi
-	shl      $4,%ebx
-	cmp      r_lo,r_hi
-	cmove    %ebx,r_hi
+	altHi    shl=$4
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm3 useAll0s=%xmm5
@@ -545,15 +563,7 @@ FUNC(insert3)
 	movdqu   %xmm3,(r_ptr,r_lo,8)
 	movq     %xmm0,16(r_ptr,r_lo,8)
 
-	// Find the alternative bucket for xmm1 at r_hi.
-	movd     %xmm1,r_hi
-	pextrd   $1,%xmm1,%ebx
-	and      %esi,r_hi
-	and      %esi,%ebx
-	lea      (r_hi,r_hi,2),r_hi
-	lea      (%ebx,%ebx,2),%ebx
-	cmp      r_lo,r_hi
-	cmove    %ebx,r_hi
+	altHi
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
@@ -716,15 +726,7 @@ FUNC(insert4)
 	pressQQ  %xmm1,%xmm3
 	movdqa   %xmm3,(r_ptr,r_lo,1)
 
-	// Find the alternative bucket for xmm1 at r_hi.
-	movd     %xmm1,r_hi
-	pextrd   $1,%xmm1,%ebx
-	and      %esi,r_hi
-	and      %esi,%ebx
-	shl      $5,r_hi
-	shl      $5,%ebx
-	cmp      r_lo,r_hi
-	cmove    %ebx,r_hi
+	altHi    shl=$5
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
