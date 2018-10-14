@@ -107,7 +107,11 @@
 	movdqa   m_stash(r_ptr),\st
     .endif
 	mov      m_bb(r_ptr),r_ptr
+    .ifnb \sse4
 	movdDup  \xmm0,\xmm0
+    .else
+	punpcklqdq \xmm0,\xmm0
+    .endif
 .endm
 
 .macro hasBegin st sse4
@@ -377,7 +381,11 @@
 #define setBlank setBlank_sse4
 #define kickMore kickMore_sse4
 
-#endif // FP64SET_X86_S
+#ifndef FP64SET_FORCE_SSE2
+#include "fp64set-x86.S"
+#endif
+
+#else // FP64SET_X86_S
 
 FUNC(has2st0)
 	hasBegin
@@ -822,3 +830,5 @@ FUNC(has4st1)
 	porQD    %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has4st1)
+
+#endif // FP64SET_X86_S
