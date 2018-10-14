@@ -75,6 +75,19 @@
 #define save_edi   12
 #endif
 
+#if MS64ABI
+// xmm6 and xmm7 are callee-saved, the caller provides the shadow space.
+#define saveXmm6 movdqa %xmm6,0x08(%rsp)
+#define saveXmm7 movdqa %xmm7,0x18(%rsp)
+#define restoreXmm6 movdqa 0x08(%rsp),%xmm6
+#define restoreXmm7 movdqa 0x18(%rsp),%xmm7
+#else
+#define saveXmm6
+#define saveXmm7
+#define restoreXmm6
+#define restoreXmm7
+#endif
+
 // has() only clobbers %XMM0 and %xmm1-%xmm3.
 #define XMM0 xmm4
 
@@ -116,11 +129,14 @@
 .endm
 
 // If the element is already added, add() returns early.
-.macro addEnd xmm insert
+.macro addEnd xmm insert usingXmm6
 	pmovmskb \xmm,r_ptr
 	test     r_ptr,r_ptr
 	jz       \insert
 	FREE
+    .ifnb \usingXmm6
+	restoreXmm6
+    .endif
 	xor      %eax,%eax
 	RET
 .endm
@@ -509,6 +525,7 @@ FUNC(add3st0)
 END(add3st0)
 
 FUNC(insert3)
+	saveXmm6
 	insertBegin
 
 	// Numbers correspond to XMM registers.
@@ -548,6 +565,7 @@ FUNC(insert3)
 	pcmpeqw  %xmm2,%xmm4
     #endif
 	pmovmskb %xmm4,%ebx
+	restoreXmm6
 	test     %ebx,%ebx
 	jnz      1f
 
@@ -593,6 +611,7 @@ FUNC(insert3)
 END(insert3)
 
 FUNC(add3st1)
+	saveXmm6
 	addBegin st=%xmm5
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
@@ -610,6 +629,7 @@ FUNC(add3st1)
 	pcmpeqQ  %xmm0,%xmm6
 	porQ4cd  %xmm6,%xmm5
 	porQ4bd  %xmm5,%xmm4
+	restoreXmm6
 	addEnd   %xmm4 NAME(insert3)
 END(add3st1)
 
@@ -649,6 +669,8 @@ FUNC(has4st0)
 END(has4st0)
 
 FUNC(add4st0)
+	saveXmm6
+	saveXmm7
 	addBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
@@ -667,7 +689,8 @@ FUNC(add4st0)
 	pcmpeqQ  %xmm0,%xmm7
 	porQ4cd  %xmm7,%xmm6
 	porQ4bd  %xmm6,%xmm5
-	addEnd   %xmm5 NAME(insert4)
+	restoreXmm7
+	addEnd   %xmm5 NAME(insert4) usingXmm6=1
 END(add4st0)
 
 FUNC(insert4)
@@ -709,6 +732,7 @@ FUNC(insert4)
 	pcmpeqw  %xmm2,%xmm6
     #endif
 	pmovmskb %xmm6,%ebx
+	restoreXmm6
 	test     %ebx,%ebx
 	jnz      1f
 
@@ -754,6 +778,8 @@ FUNC(insert4)
 END(insert4)
 
 FUNC(add4st1)
+	saveXmm6
+	saveXmm7
 	addBegin st=%xmm7
 	shl      $5,r_lo
 	shl      $5,r_hi
@@ -774,7 +800,8 @@ FUNC(add4st1)
 	movdqa   %xmm7,%xmm4
 	pcmpeqQ  %xmm0,%xmm7
 	porQD    %xmm7,%xmm5
-	addEnd   %xmm5 NAME(insert4)
+	restoreXmm7
+	addEnd   %xmm5 NAME(insert4) usingXmm6=1
 END(add4st1)
 
 FUNC(has4st1)
