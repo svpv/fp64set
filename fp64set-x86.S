@@ -173,7 +173,7 @@
 // are in xmm1; xmm1[0] goes to the alternative bucket at b[r_hi];
 // xmm1[1] is further used to shift the elements down the bucket.
 // During each iteration, b[r_hi] is loaded into xmm2 and (bsize>2) xmm3.
-.macro kickMore label
+.macro kickMore label tail sse4
 	// No free slot at r_hi.
 	movq     %xmm1,%xmm0
 	movdqa   %xmm2,%xmm1
@@ -181,19 +181,25 @@
 	// Loop control.
 	sub      $1,%edi
 	jge      \label
-.endm
-
 // Unsuccessful kickAdd() is followed by the tail call to a C routine,
 // which may resize the table.
-.macro tailCall tail
 	mov      save_ptr(%esp),r_ptr
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
 	FREE
 	movd     %xmm0,r_lo
+    .ifnb \sse4
 	pextrd   $1,%xmm0,r_hi
+    .else
+	pshufd   $1,%xmm0,%xmm0
+	movd     %xmm0,r_hi
+    .endif
 	jmp      \tail
+.endm
+
+.macro kickMore_sse4 label tail
+	kickMore \label \tail sse4=1
 .endm
 
 #define TAIL(name) fp64set_##name##tail
@@ -353,6 +359,7 @@
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
 #define setBlank setBlank_sse4
+#define kickMore kickMore_sse4
 
 #endif // FP64SET_X86_S
 
@@ -429,8 +436,7 @@ FUNC(insert2)
 	test     %ebx,%ebx
 	jnz      3f
 
-	kickMore 2b
-	tailCall TAIL(insert2)
+	kickMore 2b TAIL(insert2)
 
 3:	bsf      %ebx,%ebx
 	add      %ebx,r_hi
@@ -577,8 +583,7 @@ FUNC(insert3)
 	and      $0x0fff,%ebx
 	jnz      3f
 
-	kickMore 2b
-	tailCall TAIL(insert3)
+	kickMore 2b TAIL(insert3)
 
 3:	bsf      %ebx,%ebx
 	shr      $2,%ebx
@@ -740,8 +745,7 @@ FUNC(insert4)
 	test     %ebx,%ebx
 	jnz      3f
 
-	kickMore 2b
-	tailCall TAIL(insert4)
+	kickMore 2b TAIL(insert4)
 
 3:	bsf      %ebx,%ebx
 	lea      (r_hi,%ebx,2),r_hi
