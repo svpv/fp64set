@@ -597,19 +597,19 @@ FUNC(add3st1)
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
 	movdqu   (r_ptr,r_lo,8),%xmm4
-	pcmpeqq  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm4,%xmm1
-	pcmpeqq  %xmm0,%xmm4
-	por      %xmm5,%xmm4
+	pcmpeqQ  %xmm0,%xmm4
+	porQ4ab  %xmm5,%xmm4
 	movdqu   (r_ptr,r_hi,8),%xmm5
+	movq     16(r_ptr,r_lo,8),%xmm6
+	movhps   16(r_ptr,r_hi,8),%xmm6
 	movdqa   %xmm5,%xmm2
-	pcmpeqq  %xmm0,%xmm5
-	por      %xmm5,%xmm4
-	movq     16(r_ptr,r_lo,8),%xmm5
-	movhps   16(r_ptr,r_hi,8),%xmm5
-	movdqa   %xmm5,%xmm3
-	pcmpeqq  %xmm0,%xmm5
-	por      %xmm5,%xmm4
+	pcmpeqQ  %xmm0,%xmm5
+	movdqa   %xmm6,%xmm3
+	pcmpeqQ  %xmm0,%xmm6
+	porQ4cd  %xmm6,%xmm5
+	porQ4bd  %xmm5,%xmm4
 	addEnd   %xmm4 NAME(insert3)
 END(add3st1)
 
