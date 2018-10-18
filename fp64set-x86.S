@@ -34,16 +34,37 @@
 #define END(name) \
 	.size      NAME(name),.-NAME(name)
 
+#if defined(__i386__) || defined(__ILP32__)
 #define m_stash    0
 #define m_mask     28
 #define m_bb       32
 #define m_cnt      36
 #define m_logsize  44
+#else
+#define m_stash    0
+#define m_mask     40
+#define m_bb       48
+#define m_cnt      56
+#define m_logsize  68
+#endif
 
+#if defined(__i386__)
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define MSFASTCALL 1
+#define REGPARM3   0
 #else
 #define MSFASTCALL 0
+#define REGPARM3   1
+#endif
+#define MS64ABI    0
+#else // x86_64
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define MS64ABI    1
+#else
+#define MS64ABI    0
+#endif
+#define MSFASTCALL 0
+#define REGPARM3   0
 #endif
 
 #if MSFASTCALL
@@ -59,8 +80,9 @@
 #define save_ebx   0
 #define save_esi   4
 #define save_edi   8
+#endif
 
-#else // REGPARM3
+#if REGPARM3
 #define r_lo       %eax
 #define r_hi       %edx
 #define r_ptr      %ecx
@@ -74,6 +96,53 @@
 #define save_esi   8
 #define save_edi   12
 #endif
+
+#ifdef __i386__
+#define e_lo       r_lo
+#define e_hi       r_hi
+#define r_bb       r_ptr
+#define r_tmp      %ebx
+#define e_tmp      %ebx
+#define e_mask     %esi
+#define e_loop     %edi
+
+#elif MS64ABI
+#define r_fp       %rcx
+#define r_ptr      %rdx
+#define r_lo       %rcx
+#define e_lo       %ecx
+#define r_hi       %r11
+#define e_hi       %r11d
+#define r_bb       %rax
+#define r_tmp      %r8
+#define e_tmp      %r8d
+#define e_mask     %r9d
+#define e_loop     %r10d
+
+#else // System V ABI
+
+#ifdef __ILP32__
+#define r_ptr      %esi
+#define r_lo       %edi
+#define r_hi       %r11d
+#define r_bb       %eax
+#define r_tmp      %edx
+#else
+#define r_ptr      %rsi
+#define r_lo       %rdi
+#define r_hi       %r11
+#define r_bb       %rax
+#define r_tmp      %rdx
+#endif
+
+#define r_fp       %rdi
+#define e_lo       %edi
+#define e_hi       %r11d
+#define e_tmp      %edx
+#define e_mask     %ecx
+#define e_loop     %r8d
+
+#endif // System V ABI
 
 #if MS64ABI
 // xmm6 and xmm7 are callee-saved, the caller provides the shadow space.
@@ -93,20 +162,34 @@
 
 // Common setup for has() and add().
 // The fingerprint goes into \xmm0.
-.macro argBegin xmm0 st sse4
-	movd     r_lo,\xmm0
+.macro argBegin xmm0 st sse4 nomask
+    #ifdef __i386__
+	movd     e_lo,\xmm0
     .ifnb \sse4
-	pinsrd   $1,r_hi,\xmm0
+	pinsrd   $1,e_hi,\xmm0
     .else
-	movd     r_hi,%xmm1
+	movd     e_hi,%xmm1
 	punpckldq %xmm1,\xmm0
     .endif
-	and      m_mask(r_ptr),r_lo
-	and      m_mask(r_ptr),r_hi
+	and      m_mask(r_ptr),e_lo
+	and      m_mask(r_ptr),e_hi
+    #else
+	mov      r_lo,r_hi
+	movq     r_fp,\xmm0
+	shr      $32,r_hi
+    .ifnb \nomask
+	and      m_mask(r_ptr),e_lo
+	and      m_mask(r_ptr),e_hi
+    .else
+	mov      m_mask(r_ptr),e_mask
+	and      e_mask,e_lo
+	and      e_mask,e_hi
+    .endif
+    #endif
     .ifnb \st
 	movdqa   m_stash(r_ptr),\st
     .endif
-	mov      m_bb(r_ptr),r_ptr
+	mov      m_bb(r_ptr),r_bb
     .ifnb \sse4
 	movdDup  \xmm0,\xmm0
     .else
@@ -115,8 +198,10 @@
 .endm
 
 .macro hasBegin st sse4
+    #ifdef __i386__
 	REG3
-	argBegin %XMM0,\st,\sse4
+    #endif
+	argBegin %XMM0,\st,\sse4 nomask=1
 .endm
 
 .macro hasEnd xmm
@@ -126,18 +211,26 @@
 
 // add() routines start in a manner similar to has().
 .macro addBegin st sse4
+    #ifdef __i386__
 	REG3
 	ALLOC
 	SAVE_PTR
+    #endif
 	argBegin %xmm0,\st,\sse4
 .endm
 
 // If the element is already added, add() returns early.
 .macro addEnd xmm insert usingXmm6
+    #ifdef __i386__
 	pmovmskb \xmm,r_ptr
 	test     r_ptr,r_ptr
 	jz       \insert
 	FREE
+    #else
+	pmovmskb \xmm,e_loop
+	test     e_loop,e_loop
+	jz       \insert
+    #endif
     .ifnb \usingXmm6
 	restoreXmm6
     .endif
@@ -149,18 +242,25 @@
 // convention: most registers are passed from add() in pristine form;
 // specifically b1[] elements are passed in xmm1 and (bsize>2) xmm3.
 .macro insertBegin
-	// Strategically bump set->cnt.
+    #if defined(__i386__)
+	// The pointer has been clobbered in addEnd.
 	mov      save_ptr(%esp),r_ptr
+	// Strategically bump set->cnt.
 	addl     $1,m_cnt(r_ptr)
-	mov      m_bb(r_ptr),r_ptr
+	mov      m_bb(r_ptr),r_bb
 	mov      %ebx,save_ebx(%esp)
+    #else
+	addq     $1,m_cnt(r_ptr)
+    #endif
 .endm
 
 // The frist part of insert() is sometimes named justAdd() - the easy case
 // when there is a free slot in either b1[] or b2[].  This is how it ends.
 .macro justEnd
+    #ifdef __i386__
 	mov      save_ebx(%esp),%ebx
 	FREE
+    #endif
 	mov      $1,%eax
 	RET
 .endm
@@ -169,20 +269,27 @@
 // An element is kicked out from the bottom of b1[] and reinserted at the
 // top of its alternative bucket.
 .macro gonnaKick
+    #ifdef __i386__
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
 	mov      save_ptr(%esp),%ebx
-	mov      m_mask(%ebx),%esi
-	mov      m_logsize(%ebx),%edi
-	shl      $1,%edi
+	mov      m_mask(%ebx),e_mask
+	mov      m_logsize(%ebx),e_loop
+    #else
+	// e_mask already loaded in argBegin.
+	mov      m_logsize(r_ptr),e_loop
+    #endif
+	shl      $1,e_loop
 .endm
 
 // Successful kickAdd() return.
 .macro kickEnd
+    #ifdef __i386__
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
 	FREE
+    #endif
 	mov      $1,%eax
 	RET
 .endm
@@ -199,22 +306,28 @@
 	movdqa   %xmm2,%xmm1
 	mov      r_hi,r_lo
 	// Loop control.
-	sub      $1,%edi
+	sub      $1,e_loop
 	jge      \label
 // Unsuccessful kickAdd() is followed by the tail call to a C routine,
 // which may resize the table.
+    #ifdef __i386__
+    #if REGPARM3
 	mov      save_ptr(%esp),r_ptr
+    #endif
 	mov      save_ebx(%esp),%ebx
 	mov      save_esi(%esp),%esi
 	mov      save_edi(%esp),%edi
 	FREE
-	movd     %xmm0,r_lo
+	movd     %xmm0,e_lo
     .ifnb \sse4
-	pextrd   $1,%xmm0,r_hi
+	pextrd   $1,%xmm0,e_hi
     .else
 	pshufd   $1,%xmm0,%xmm0
-	movd     %xmm0,r_hi
+	movd     %xmm0,e_hi
     .endif
+    #else
+	movq     %xmm0,r_fp
+    #endif
 	jmp      \tail
 .endm
 
@@ -271,24 +384,24 @@
 // but xmm1 has not been clobbered.  So we need to find the alternative
 // bucket for xmm1[0], to insert from the top; this will be bb[r_hi].
 .macro altHi shl sse4
-	movd     %xmm1,r_hi
+	movd     %xmm1,e_hi
     .ifnb \sse4
-	pextrd   $1,%xmm1,%ebx
+	pextrd   $1,%xmm1,e_tmp
     .else
 	pshufd   $1,%xmm1,%xmm0
-	movd     %xmm0,%ebx
+	movd     %xmm0,e_tmp
     .endif
-	and      %esi,r_hi
-	and      %esi,%ebx
+	and      e_mask,e_hi
+	and      e_mask,e_tmp
     .ifnb \shl
 	shl      \shl,r_hi
-	shl      \shl,%ebx
+	shl      \shl,r_tmp
     .else
 	lea      (r_hi,r_hi,2),r_hi
-	lea      (%ebx,%ebx,2),%ebx
+	lea      (r_tmp,r_tmp,2),r_tmp
     .endif
 	cmp      r_lo,r_hi
-	cmove    %ebx,r_hi
+	cmove    r_tmp,r_hi
 .endm
 
 // A technique similar to porQQ can be used to combine 3 results,
@@ -329,18 +442,31 @@
 // Unoccupied slots have blank values.  The blank value for the bucket at bb[0]
 // is UINT64_MAX, the blank value for all other buckets is 0.
 .macro setBlank lohi xmm setAll0s useAll0s
+    #if defined(__i386__) || defined(__ILP32__)
 	movd     \lohi,\xmm
+    #else
+	// Dealing with scaled \lohi which might exceed 32 bits.
+	movq     \lohi,\xmm
+	punpcklqdq \xmm,\xmm
+	packssdw \xmm,\xmm
+    #endif
     .ifnb \setAll0s
 	pxor     \setAll0s,\setAll0s
 	pcmpeqd  \setAll0s,\xmm
     .else
 	pcmpeqd  \useAll0s,\xmm
     .endif
+    #if defined(__i386__) || defined(__ILP32__)
 	pshufd   $0,\xmm,\xmm
+    #endif
 .endm
 
 .macro setBlank_sse4 lohi xmm setAll0s useAll0s
+    #if defined(__i386__) || defined(__ILP32__)
 	movd     \lohi,\xmm
+    #else
+	movq     \lohi,\xmm
+    #endif
 	movddup  \xmm,\xmm
     .ifnb \setAll0s
 	pxor     \setAll0s,\setAll0s
@@ -391,9 +517,9 @@ FUNC(has2st0)
 	hasBegin
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
+	movdqa   (r_bb,r_lo,1),%xmm1
 	pcmpeqQ  %XMM0,%xmm1
-	pcmpeqQ  (r_ptr,r_hi,1),%XMM0
+	pcmpeqQ  (r_bb,r_hi,1),%XMM0
 	porQQ    %XMM0,%xmm1
 	hasEnd   %xmm1
 END(has2st0)
@@ -402,8 +528,8 @@ FUNC(add2st0)
 	addBegin
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm3
-	movdqa   (r_ptr,r_hi,1),%xmm4
+	movdqa   (r_bb,r_lo,1),%xmm3
+	movdqa   (r_bb,r_hi,1),%xmm4
 	movdqa   %xmm3,%xmm1
 	pcmpeqQ  %xmm0,%xmm3
 	movdqa   %xmm4,%xmm2
@@ -425,46 +551,46 @@ FUNC(insert2)
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
 	blendQQ  %xmm4,%xmm3
-	pmovmskb %xmm3,%ebx
-	test     %ebx,%ebx
+	pmovmskb %xmm3,e_tmp
+	test     e_tmp,e_tmp
 	jnz      1f
 
 	gonnaKick
 	jmp      2f
 
-1:	bsf      %ebx,%ebx
+1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns 0, 4, 8, or 12.
-	test     $4,%ebx
+	test     $4,e_tmp
 	cmovnz   r_hi,r_lo
 	// Is it [0] or [1]?
-	shr      $3,%ebx
-	lea      (r_lo,%ebx,8),r_lo
-	movq     %xmm0,(r_ptr,r_lo,1)
+	shr      $3,e_tmp
+	lea      (r_lo,r_tmp,8),r_lo
+	movq     %xmm0,(r_bb,r_lo,1)
 	justEnd
 
 	.align   AlignLoop
 2:	pressQQ  %xmm1,%xmm0
-	movdqa   %xmm0,(r_ptr,r_lo,1)
+	movdqa   %xmm0,(r_bb,r_lo,1)
 
 	altHi    shl=$4
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm3 useAll0s=%xmm5
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   (r_bb,r_hi,1),%xmm2
 	pcmpeqQ  %xmm2,%xmm3
     #if !SSE4
 	pshufd   $0xb1,%xmm3,%xmm0
 	pand     %xmm0,%xmm3
     #endif
-	pmovmskb %xmm3,%ebx
-	test     %ebx,%ebx
+	pmovmskb %xmm3,e_tmp
+	test     e_tmp,e_tmp
 	jnz      3f
 
 	kickMore 2b TAIL(insert2)
 
-3:	bsf      %ebx,%ebx
-	add      %ebx,r_hi
-	movq     %xmm1,(r_ptr,r_hi,1)
+3:	bsf      e_tmp,e_tmp
+	add      r_tmp,r_hi
+	movq     %xmm1,(r_bb,r_hi,1)
 	kickEnd
 END(insert2)
 
@@ -472,8 +598,8 @@ FUNC(add2st1)
 	addBegin st=%xmm5
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm3
-	movdqa   (r_ptr,r_hi,1),%xmm4
+	movdqa   (r_bb,r_lo,1),%xmm3
+	movdqa   (r_bb,r_hi,1),%xmm4
 	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm3,%xmm1
 	pcmpeqQ  %xmm0,%xmm3
@@ -488,10 +614,10 @@ FUNC(has2st1)
 	hasBegin st=%xmm3
 	shl      $4,r_lo
 	shl      $4,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
+	movdqa   (r_bb,r_lo,1),%xmm1
 	pcmpeqQ  %XMM0,%xmm3
 	pcmpeqQ  %XMM0,%xmm1
-	pcmpeqQ  (r_ptr,r_hi,1),%XMM0
+	pcmpeqQ  (r_bb,r_hi,1),%XMM0
 	porQ3ac  %xmm3,%xmm1
 	porQ3bc  %XMM0,%xmm1
 	hasEnd   %xmm1
@@ -501,11 +627,11 @@ FUNC(has3st0)
 	hasBegin
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdqu   8(r_ptr,r_lo,8),%xmm1
-	movdqu   8(r_ptr,r_hi,8),%xmm2
+	movdqu   8(r_bb,r_lo,8),%xmm1
+	movdqu   8(r_bb,r_hi,8),%xmm2
 	pcmpeqQ  %XMM0,%xmm1
-	movq     (r_ptr,r_lo,8),%xmm3
-	movhps   (r_ptr,r_hi,8),%xmm3
+	movq     (r_bb,r_lo,8),%xmm3
+	movhps   (r_bb,r_hi,8),%xmm3
 	pcmpeqQ  %XMM0,%xmm2
 	porQ3ac  %xmm2,%xmm1
 	pcmpeqQ  %XMM0,%xmm3
@@ -517,10 +643,10 @@ FUNC(add3st0)
 	addBegin
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdqu   (r_ptr,r_lo,8),%xmm4
-	movdqu   (r_ptr,r_hi,8),%xmm5
-	movq     16(r_ptr,r_lo,8),%xmm3
-	movhps   16(r_ptr,r_hi,8),%xmm3
+	movdqu   (r_bb,r_lo,8),%xmm4
+	movdqu   (r_bb,r_hi,8),%xmm5
+	movq     16(r_bb,r_lo,8),%xmm3
+	movhps   16(r_bb,r_hi,8),%xmm3
 	movdqa   %xmm4,%xmm1
 	pcmpeqQ  %xmm0,%xmm4
 	movdqa   %xmm5,%xmm2
@@ -572,49 +698,49 @@ FUNC(insert3)
 	pcmpeqw  %xmm2,%xmm2
 	pcmpeqw  %xmm2,%xmm4
     #endif
-	pmovmskb %xmm4,%ebx
+	pmovmskb %xmm4,e_tmp
 	restoreXmm6
-	test     %ebx,%ebx
+	test     e_tmp,e_tmp
 	jnz      1f
 
 	gonnaKick
 	jmp      2f
 
-1:	bsf      %ebx,%ebx
+1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8) vs (2, 6, 10).
-	test     $2,%ebx
+	test     $2,e_tmp
 	cmovnz   r_hi,r_lo
 	// Is it [0], [1] or [2]?
-	shr      $2,%ebx
-	add      %ebx,r_lo
-	movq     %xmm0,(r_ptr,r_lo,8)
+	shr      $2,e_tmp
+	add      r_tmp,r_lo
+	movq     %xmm0,(r_bb,r_lo,8)
 	justEnd
 
 	.align   AlignLoop
 2:	pressQQ  %xmm1,%xmm3
-	movdqu   %xmm3,(r_ptr,r_lo,8)
-	movq     %xmm0,16(r_ptr,r_lo,8)
+	movdqu   %xmm3,(r_bb,r_lo,8)
+	movq     %xmm0,16(r_bb,r_lo,8)
 
 	altHi
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
-	movdqu   (r_ptr,r_hi,8),%xmm2
-	movq     16(r_ptr,r_hi,8),%xmm3
+	movdqu   (r_bb,r_hi,8),%xmm2
+	movq     16(r_bb,r_hi,8),%xmm3
 	movdqa   %xmm2,%xmm0
 	pcmpeqQ  %xmm4,%xmm0
 	pcmpeqQ  %xmm3,%xmm4
 	packQQ   %xmm4,%xmm0
-	pmovmskb %xmm0,%ebx
-	and      $0x0fff,%ebx
+	pmovmskb %xmm0,e_tmp
+	and      $0x0fff,e_tmp
 	jnz      3f
 
 	kickMore 2b TAIL(insert3)
 
-3:	bsf      %ebx,%ebx
-	shr      $2,%ebx
-	add      %ebx,r_hi
-	movq     %xmm1,(r_ptr,r_hi,8)
+3:	bsf      e_tmp,e_tmp
+	shr      $2,e_tmp
+	add      r_tmp,r_hi
+	movq     %xmm1,(r_bb,r_hi,8)
 	kickEnd
 END(insert3)
 
@@ -623,14 +749,14 @@ FUNC(add3st1)
 	addBegin st=%xmm5
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdqu   (r_ptr,r_lo,8),%xmm4
+	movdqu   (r_bb,r_lo,8),%xmm4
 	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm4,%xmm1
 	pcmpeqQ  %xmm0,%xmm4
 	porQ4ab  %xmm5,%xmm4
-	movdqu   (r_ptr,r_hi,8),%xmm5
-	movq     16(r_ptr,r_lo,8),%xmm6
-	movhps   16(r_ptr,r_hi,8),%xmm6
+	movdqu   (r_bb,r_hi,8),%xmm5
+	movq     16(r_bb,r_lo,8),%xmm6
+	movhps   16(r_bb,r_hi,8),%xmm6
 	movdqa   %xmm5,%xmm2
 	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm6,%xmm3
@@ -645,13 +771,13 @@ FUNC(has3st1)
 	hasBegin st=%xmm3
 	lea      (r_lo,r_lo,2),r_lo
 	lea      (r_hi,r_hi,2),r_hi
-	movdqu   8(r_ptr,r_lo,8),%xmm1
-	movdqu   8(r_ptr,r_hi,8),%xmm2
+	movdqu   8(r_bb,r_lo,8),%xmm1
+	movdqu   8(r_bb,r_hi,8),%xmm2
 	pcmpeqQ  %XMM0,%xmm3
 	pcmpeqQ  %XMM0,%xmm1
 	porQ4ab  %xmm3,%xmm1
-	movq     (r_ptr,r_lo,8),%xmm3
-	movhps   (r_ptr,r_hi,8),%xmm3
+	movq     (r_bb,r_lo,8),%xmm3
+	movhps   (r_bb,r_hi,8),%xmm3
 	pcmpeqQ  %XMM0,%xmm2
 	pcmpeqQ  %XMM0,%xmm3
 	porQ4cd  %xmm3,%xmm2
@@ -663,13 +789,13 @@ FUNC(has4st0)
 	hasBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   (r_bb,r_lo,1),%xmm1
+	movdqa   (r_bb,r_hi,1),%xmm2
 	pcmpeqQ  %XMM0,%xmm1
-	movdqa   16(r_ptr,r_lo,1),%xmm3
+	movdqa   16(r_bb,r_lo,1),%xmm3
 	pcmpeqQ  %XMM0,%xmm2
 	pcmpeqQ  %XMM0,%xmm3
-	pcmpeqQ  16(r_ptr,r_hi,1),%XMM0
+	pcmpeqQ  16(r_bb,r_hi,1),%XMM0
 	porQ4ab  %xmm2,%xmm1
 	porQ4cd  %xmm3,%XMM0
 	porQ4bd  %XMM0,%xmm1
@@ -682,15 +808,15 @@ FUNC(add4st0)
 	addBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm5
-	movdqa   (r_ptr,r_hi,1),%xmm6
+	movdqa   (r_bb,r_lo,1),%xmm5
+	movdqa   (r_bb,r_hi,1),%xmm6
 	movdqa   %xmm5,%xmm1
 	pcmpeqQ  %xmm0,%xmm5
 	movdqa   %xmm6,%xmm2
 	pcmpeqQ  %xmm0,%xmm6
 	porQ4ab  %xmm6,%xmm5
-	movdqa   16(r_ptr,r_lo,1),%xmm6
-	movdqa   16(r_ptr,r_hi,1),%xmm7
+	movdqa   16(r_bb,r_lo,1),%xmm6
+	movdqa   16(r_bb,r_hi,1),%xmm7
 	movdqa   %xmm6,%xmm3
 	pcmpeqQ  %xmm0,%xmm6
 	movdqa   %xmm7,%xmm4
@@ -739,49 +865,49 @@ FUNC(insert4)
 	pcmpeqw  %xmm2,%xmm2
 	pcmpeqw  %xmm2,%xmm6
     #endif
-	pmovmskb %xmm6,%ebx
+	pmovmskb %xmm6,e_tmp
 	restoreXmm6
-	test     %ebx,%ebx
+	test     e_tmp,e_tmp
 	jnz      1f
 
 	gonnaKick
 	jmp      2f
 
-1:	bsf      %ebx,%ebx
+1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8, 12) vs (2, 6, 10, 14).
-	test     $2,%ebx
+	test     $2,e_tmp
 	cmovnz   r_hi,r_lo
 	// Is it [0], [1], [2], or [3]?
-	shr      $2,%ebx
-	lea      (r_lo,%ebx,8),r_lo
-	movq     %xmm0,(r_ptr,r_lo,1)
+	shr      $2,e_tmp
+	lea      (r_lo,r_tmp,8),r_lo
+	movq     %xmm0,(r_bb,r_lo,1)
 	justEnd
 
 	.align   AlignLoop
 2:	pressQQ  %xmm3,%xmm0
-	movdqa   %xmm0,16(r_ptr,r_lo,1)
+	movdqa   %xmm0,16(r_bb,r_lo,1)
 	pressQQ  %xmm1,%xmm3
-	movdqa   %xmm3,(r_ptr,r_lo,1)
+	movdqa   %xmm3,(r_bb,r_lo,1)
 
 	altHi    shl=$5
 
 	// Check for empty slots at bb[r_hi].
 	setBlank r_hi,%xmm4 useAll0s=%xmm5
-	movdqa   (r_ptr,r_hi,1),%xmm2
-	movdqa   16(r_ptr,r_hi,1),%xmm3
+	movdqa   (r_bb,r_hi,1),%xmm2
+	movdqa   16(r_bb,r_hi,1),%xmm3
 	movdqa   %xmm2,%xmm0
 	pcmpeqQ  %xmm4,%xmm0
 	pcmpeqQ  %xmm3,%xmm4
 	packQQ   %xmm4,%xmm0
-	pmovmskb %xmm0,%ebx
-	test     %ebx,%ebx
+	pmovmskb %xmm0,e_tmp
+	test     e_tmp,e_tmp
 	jnz      3f
 
 	kickMore 2b TAIL(insert4)
 
-3:	bsf      %ebx,%ebx
-	lea      (r_hi,%ebx,2),r_hi
-	movq     %xmm1,(r_ptr,r_hi,1)
+3:	bsf      e_tmp,e_tmp
+	lea      (r_hi,r_tmp,2),r_hi
+	movq     %xmm1,(r_bb,r_hi,1)
 	kickEnd
 END(insert4)
 
@@ -791,19 +917,19 @@ FUNC(add4st1)
 	addBegin st=%xmm7
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm5
-	movdqa   (r_ptr,r_hi,1),%xmm6
+	movdqa   (r_bb,r_lo,1),%xmm5
+	movdqa   (r_bb,r_hi,1),%xmm6
 	pcmpeqQ  %xmm0,%xmm7
 	movdqa   %xmm5,%xmm1
 	pcmpeqQ  %xmm0,%xmm5
 	porQ4ab  %xmm7,%xmm5
-	movdqa   16(r_ptr,r_lo,1),%xmm7
+	movdqa   16(r_bb,r_lo,1),%xmm7
 	movdqa   %xmm6,%xmm2
 	pcmpeqQ  %xmm0,%xmm6
 	movdqa   %xmm7,%xmm3
 	pcmpeqQ  %xmm0,%xmm7
 	porQ4cd  %xmm7,%xmm6
-	movdqa   16(r_ptr,r_hi,1),%xmm7
+	movdqa   16(r_bb,r_hi,1),%xmm7
 	porQ4bd  %xmm6,%xmm5
 	movdqa   %xmm7,%xmm4
 	pcmpeqQ  %xmm0,%xmm7
@@ -816,15 +942,15 @@ FUNC(has4st1)
 	hasBegin st=%xmm3
 	shl      $5,r_lo
 	shl      $5,r_hi
-	movdqa   (r_ptr,r_lo,1),%xmm1
-	movdqa   (r_ptr,r_hi,1),%xmm2
+	movdqa   (r_bb,r_lo,1),%xmm1
+	movdqa   (r_bb,r_hi,1),%xmm2
 	pcmpeqQ  %XMM0,%xmm3
 	pcmpeqQ  %XMM0,%xmm1
 	porQ4ab  %xmm3,%xmm1
-	movdqa   16(r_ptr,r_lo,1),%xmm3
+	movdqa   16(r_bb,r_lo,1),%xmm3
 	pcmpeqQ  %XMM0,%xmm2
 	pcmpeqQ  %XMM0,%xmm3
-	pcmpeqQ  16(r_ptr,r_hi,1),%XMM0
+	pcmpeqQ  16(r_bb,r_hi,1),%XMM0
 	porQ4cd  %xmm3,%xmm2
 	porQ4bd  %xmm2,%xmm1
 	porQD    %XMM0,%xmm1
