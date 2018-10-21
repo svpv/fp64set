@@ -379,18 +379,16 @@
 	shufpd   $1,\xmm0,\xmm0
 .endm
 
+.macro preAltHi scale
+	mov      (r_bb,r_lo,\scale),e_hi
+	mov      4(r_bb,r_lo,\scale),e_tmp
+.endm
+
 // Continuing with the above picture, xmm1 corresponds to the bucket
 // at bb[r_lo].  The fingerprint "1" has been kiked out of the bucket,
 // but xmm1 has not been clobbered.  So we need to find the alternative
 // bucket for xmm1[0], to insert from the top; this will be bb[r_hi].
-.macro altHi shl sse4
-	movd     %xmm1,e_hi
-    .ifnb \sse4
-	pextrd   $1,%xmm1,e_tmp
-    .else
-	pshufd   $1,%xmm1,%xmm0
-	movd     %xmm0,e_tmp
-    .endif
+.macro altHi shl
 	and      e_mask,e_hi
 	and      e_mask,e_tmp
     .ifnb \shl
@@ -501,7 +499,6 @@
 #define packQQ  packssdw
 #define blendQQ pblendw $0xcc,
 #define pressQQ palignr $8,
-#define altHi   altHi sse4=1
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
 #define setBlank setBlank_sse4
@@ -570,6 +567,7 @@ FUNC(insert2)
 
 	.align   AlignLoop
 2:	pressQQ  %xmm1,%xmm0
+	preAltHi scale=1
 	movdqa   %xmm0,(r_bb,r_lo,1)
 
 	altHi    shl=$4
@@ -718,6 +716,7 @@ FUNC(insert3)
 
 	.align   AlignLoop
 2:	pressQQ  %xmm1,%xmm3
+	preAltHi scale=8
 	movdqu   %xmm3,(r_bb,r_lo,8)
 	movq     %xmm0,16(r_bb,r_lo,8)
 
@@ -885,6 +884,7 @@ FUNC(insert4)
 
 	.align   AlignLoop
 2:	pressQQ  %xmm3,%xmm0
+	preAltHi scale=1
 	movdqa   %xmm0,16(r_bb,r_lo,1)
 	pressQQ  %xmm1,%xmm3
 	movdqa   %xmm3,(r_bb,r_lo,1)
