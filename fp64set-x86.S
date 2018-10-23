@@ -117,6 +117,7 @@
 #define e_hi       %r11d
 #define r_bb       %rax
 #define r_tmp      %r8
+#define q_tmp      %r8
 #define e_tmp      %r8d
 #define e_mask     %r9d
 #define e_loop     %r10d
@@ -142,6 +143,7 @@
 #define e_lo       %edi
 #define q_hi       %r11
 #define e_hi       %r11d
+#define q_tmp      %rdx
 #define e_tmp      %edx
 #define e_mask     %ecx
 #define e_loop     %r8d
@@ -443,27 +445,24 @@
 
 // Unoccupied slots have blank values.  The blank value for the bucket at bb[0]
 // is UINT64_MAX, the blank value for all other buckets is 0.
-.macro setBlank lohi xmm setAll0s useAll0s
-    #if defined(__i386__) || defined(__ILP32__)
-	movd     \lohi,\xmm
-    #else
-	// Dealing with scaled \lohi which might exceed 32 bits.
-	movq     \lohi,\xmm
-	punpcklqdq \xmm,\xmm
-	packssdw \xmm,\xmm
-    #endif
-    .ifnb \setAll0s
-	pxor     \setAll0s,\setAll0s
-	pcmpeqd  \setAll0s,\xmm
-    .else
-	pcmpeqd  \useAll0s,\xmm
-    .endif
-    #if defined(__i386__) || defined(__ILP32__)
+.macro setBlank lohi blank
+	cmp      $1,\lohi
+	sbb      \blank,\blank
+.endm
+
+.macro xmmBlank lohi xmm setAll0s useAll0s
+    #ifdef __i386__
+	setBlank \lohi,e_tmp
+	movd     e_tmp,\xmm
 	pshufd   $0,\xmm,\xmm
+    #else
+	setBlank \lohi,q_tmp
+	movq     q_tmp,\xmm
+	punpcklqdq \xmm,\xmm
     #endif
 .endm
 
-.macro setBlank_sse4 lohi xmm setAll0s useAll0s
+.macro xmmBlank_sse4 lohi xmm setAll0s useAll0s
     #if defined(__i386__) || defined(__ILP32__)
 	movd     \lohi,\xmm
     #else
@@ -505,7 +504,7 @@
 #define pressQQ palignr $8,
 #define hasBegin hasBegin sse4=1
 #define andBegin andBegin sse4=1
-#define setBlank setBlank_sse4
+#define xmmBlank xmmBlank_sse4
 #define kickMore kickMore_sse4
 
 #ifndef FP64SET_FORCE_SSE2
@@ -543,11 +542,11 @@ FUNC(insert2)
 	insertBegin
 
 	// Check for free slots in b1[*] -> xmm3.
-	setBlank r_lo,%xmm3 setAll0s=%xmm5
+	xmmBlank r_lo,%xmm3 setAll0s=%xmm5
 	pcmpeqQ  %xmm1,%xmm3
 
 	// Check for free slots in b2[*] -> xmm4.
-	setBlank r_hi,%xmm4 useAll0s=%xmm5
+	xmmBlank r_hi,%xmm4 useAll0s=%xmm5
 	pcmpeqQ  %xmm2,%xmm4
 
 	// Combine (b1[0],b2[0],b1[1],b2[1]) -> mask.
@@ -577,7 +576,7 @@ FUNC(insert2)
 	altHi    shl=$4
 
 	// Check for empty slots at bb[r_hi].
-	setBlank r_hi,%xmm3 useAll0s=%xmm5
+	xmmBlank r_hi,%xmm3 useAll0s=%xmm5
 	movdqa   (r_bb,r_hi,1),%xmm2
 	pcmpeqQ  %xmm2,%xmm3
     #if !SSE4
@@ -676,11 +675,11 @@ FUNC(insert3)
 	//  buckets
 
 	// Check for free slots in b2[0,1] -> xmm2.
-	setBlank r_hi,%xmm6 setAll0s=%xmm5
+	xmmBlank r_hi,%xmm6 setAll0s=%xmm5
 	pcmpeqQ  %xmm6,%xmm2
 
 	// Prepare blank values for b1[*] -> xmm4, b1[*] + b2[*] -> xmm6.
-	setBlank r_lo,%xmm4 useAll0s=%xmm5
+	xmmBlank r_lo,%xmm4 useAll0s=%xmm5
 	movSD    %xmm4,%xmm6
 
 	// Check for free slots in b1[0,1] -> xmm4, b1[2] + b2[2] -> xmm6.
@@ -727,7 +726,7 @@ FUNC(insert3)
 	altHi
 
 	// Check for empty slots at bb[r_hi].
-	setBlank r_hi,%xmm4 useAll0s=%xmm5
+	xmmBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqu   (r_bb,r_hi,8),%xmm2
 	movq     16(r_bb,r_hi,8),%xmm3
 	movdqa   %xmm2,%xmm0
@@ -844,13 +843,13 @@ FUNC(insert4)
 	// +---+---+
 
 	// Check for free slots in b2[*] -> xmm2.
-	setBlank r_hi,%xmm6 setAll0s=%xmm5
+	xmmBlank r_hi,%xmm6 setAll0s=%xmm5
 	pcmpeqQ  %xmm6,%xmm2
 	pcmpeqQ  %xmm6,%xmm4
 	packssdw %xmm4,%xmm2
 
 	// Check for free slots in b1[*] -> xmm6.
-	setBlank r_lo,%xmm6 useAll0s=%xmm5
+	xmmBlank r_lo,%xmm6 useAll0s=%xmm5
 	movdqa   %xmm3,%xmm4
 	pcmpeqQ  %xmm6,%xmm4
 	pcmpeqQ  %xmm1,%xmm6
@@ -896,7 +895,7 @@ FUNC(insert4)
 	altHi    shl=$5
 
 	// Check for empty slots at bb[r_hi].
-	setBlank r_hi,%xmm4 useAll0s=%xmm5
+	xmmBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqa   (r_bb,r_hi,1),%xmm2
 	movdqa   16(r_bb,r_hi,1),%xmm3
 	movdqa   %xmm2,%xmm0
