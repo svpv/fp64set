@@ -556,7 +556,7 @@ FUNC(insert2)
 	jnz      1f
 
 	gonnaKick
-	jmp      2f
+	jmp      NAME(kick2)
 
 1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns 0, 4, 8, or 12.
@@ -567,15 +567,16 @@ FUNC(insert2)
 	lea      (r_lo,r_tmp,8),r_lo
 	movq     %xmm0,(r_bb,r_lo,1)
 	justEnd
+END(insert2)
 
-	.align   AlignLoop
-2:	pressQQ  %xmm1,%xmm0
+FUNC(kick2)
+	pressQQ  %xmm1,%xmm0
 	preAltHi scale=1
 	movdqa   %xmm0,(r_bb,r_lo,1)
 
 	altHi    shl=$4
 
-	// Check for empty slots at bb[r_hi].
+#ifdef __i386__
 	xmmBlank r_hi,%xmm3 useAll0s=%xmm5
 	movdqa   (r_bb,r_hi,1),%xmm2
 	pcmpeqQ  %xmm2,%xmm3
@@ -585,15 +586,30 @@ FUNC(insert2)
     #endif
 	pmovmskb %xmm3,e_tmp
 	test     e_tmp,e_tmp
-	jnz      3f
+	jnz      1f
 
-	kickMore 2b TAIL(insert2)
+	kickMore NAME(kick2) TAIL(insert2)
 
-3:	bsf      e_tmp,e_tmp
+1:	bsf      e_tmp,e_tmp
 	add      r_tmp,r_hi
 	movq     %xmm1,(r_bb,r_hi,1)
 	kickEnd
-END(insert2)
+#else
+	setBlank r_hi,q_tmp
+	cmp      (r_bb,r_hi,1),q_tmp
+	je       1f
+	cmp      8(r_bb,r_hi,1),q_tmp
+	je       2f
+
+	movdqa   (r_bb,r_hi,1),%xmm2
+	kickMore NAME(kick2) TAIL(insert2)
+
+1:	movq     %xmm1,(r_bb,r_hi,1)
+	kickEnd
+2:	movq     %xmm1,8(r_bb,r_hi,1)
+	kickEnd
+#endif
+END(kick2)
 
 FUNC(add2st1)
 	addBegin st=%xmm5
@@ -705,7 +721,7 @@ FUNC(insert3)
 	jnz      1f
 
 	gonnaKick
-	jmp      2f
+	jmp      NAME(kick3)
 
 1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8) vs (2, 6, 10).
@@ -716,16 +732,17 @@ FUNC(insert3)
 	add      r_tmp,r_lo
 	movq     %xmm0,(r_bb,r_lo,8)
 	justEnd
+END(insert3)
 
-	.align   AlignLoop
-2:	pressQQ  %xmm1,%xmm3
+FUNC(kick3)
+	pressQQ  %xmm1,%xmm3
 	preAltHi scale=8
 	movdqu   %xmm3,(r_bb,r_lo,8)
 	movq     %xmm0,16(r_bb,r_lo,8)
 
 	altHi
 
-	// Check for empty slots at bb[r_hi].
+#ifdef __i386__
 	xmmBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqu   (r_bb,r_hi,8),%xmm2
 	movq     16(r_bb,r_hi,8),%xmm3
@@ -735,16 +752,36 @@ FUNC(insert3)
 	packQQ   %xmm4,%xmm0
 	pmovmskb %xmm0,e_tmp
 	and      $0x0fff,e_tmp
-	jnz      3f
+	jnz      1f
 
-	kickMore 2b TAIL(insert3)
+	kickMore NAME(kick3) TAIL(insert3)
 
-3:	bsf      e_tmp,e_tmp
+1:	bsf      e_tmp,e_tmp
 	shr      $2,e_tmp
 	add      r_tmp,r_hi
 	movq     %xmm1,(r_bb,r_hi,8)
 	kickEnd
-END(insert3)
+#else
+	setBlank r_hi,q_tmp
+	cmp      (r_bb,r_hi,8),q_tmp
+	je       1f
+	cmp      8(r_bb,r_hi,8),q_tmp
+	je       2f
+	cmp      16(r_bb,r_hi,8),q_tmp
+	je       3f
+
+	movdqu   (r_bb,r_hi,8),%xmm2
+	movq     16(r_bb,r_hi,8),%xmm3
+	kickMore NAME(kick3) TAIL(insert3)
+
+1:	movq     %xmm1,(r_bb,r_hi,8)
+	kickEnd
+2:	movq     %xmm1,8(r_bb,r_hi,8)
+	kickEnd
+3:	movq     %xmm1,16(r_bb,r_hi,8)
+	kickEnd
+#endif
+END(kick3)
 
 FUNC(add3st1)
 	saveXmm6
@@ -873,7 +910,7 @@ FUNC(insert4)
 	jnz      1f
 
 	gonnaKick
-	jmp      2f
+	jmp      NAME(kick4)
 
 1:	bsf      e_tmp,e_tmp
 	// Is it b1[] or b2[]? bsf returns (0, 4, 8, 12) vs (2, 6, 10, 14).
@@ -884,9 +921,10 @@ FUNC(insert4)
 	lea      (r_lo,r_tmp,8),r_lo
 	movq     %xmm0,(r_bb,r_lo,1)
 	justEnd
+END(insert4)
 
-	.align   AlignLoop
-2:	pressQQ  %xmm3,%xmm0
+FUNC(kick4)
+	pressQQ  %xmm3,%xmm0
 	preAltHi scale=1
 	movdqa   %xmm0,16(r_bb,r_lo,1)
 	pressQQ  %xmm1,%xmm3
@@ -894,7 +932,7 @@ FUNC(insert4)
 
 	altHi    shl=$5
 
-	// Check for empty slots at bb[r_hi].
+#ifdef __i386__
 	xmmBlank r_hi,%xmm4 useAll0s=%xmm5
 	movdqa   (r_bb,r_hi,1),%xmm2
 	movdqa   16(r_bb,r_hi,1),%xmm3
@@ -904,15 +942,39 @@ FUNC(insert4)
 	packQQ   %xmm4,%xmm0
 	pmovmskb %xmm0,e_tmp
 	test     e_tmp,e_tmp
-	jnz      3f
+	jnz      1f
 
-	kickMore 2b TAIL(insert4)
+	kickMore NAME(kick4) TAIL(insert4)
 
-3:	bsf      e_tmp,e_tmp
+1:	bsf      e_tmp,e_tmp
 	lea      (r_hi,r_tmp,2),r_hi
 	movq     %xmm1,(r_bb,r_hi,1)
 	kickEnd
-END(insert4)
+#else
+	setBlank r_hi,q_tmp
+	cmp      (r_bb,r_hi,1),q_tmp
+	je       1f
+	cmp      8(r_bb,r_hi,1),q_tmp
+	je       2f
+	cmp      16(r_bb,r_hi,1),q_tmp
+	je       3f
+	cmp      24(r_bb,r_hi,1),q_tmp
+	je       4f
+
+	movdqa   (r_bb,r_hi,1),%xmm2
+	movdqa   16(r_bb,r_hi,1),%xmm3
+	kickMore NAME(kick4) TAIL(insert4)
+
+1:	movq     %xmm1,(r_bb,r_hi,1)
+	kickEnd
+2:	movq     %xmm1,8(r_bb,r_hi,1)
+	kickEnd
+3:	movq     %xmm1,16(r_bb,r_hi,1)
+	kickEnd
+4:	movq     %xmm1,24(r_bb,r_hi,1)
+	kickEnd
+#endif
+END(kick4)
 
 FUNC(add4st1)
 	saveXmm6
