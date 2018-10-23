@@ -107,11 +107,13 @@
 #define e_loop     %edi
 
 #elif MS64ABI
-#define r_fp       %rcx
+#define q_fp       %rcx
 #define r_ptr      %rdx
 #define r_lo       %rcx
+#define q_lo       %rcx
 #define e_lo       %ecx
 #define r_hi       %r11
+#define q_hi       %r11
 #define e_hi       %r11d
 #define r_bb       %rax
 #define r_tmp      %r8
@@ -135,8 +137,10 @@
 #define r_tmp      %rdx
 #endif
 
-#define r_fp       %rdi
+#define q_fp       %rdi
+#define q_lo       %rdi
 #define e_lo       %edi
+#define q_hi       %r11
 #define e_hi       %r11d
 #define e_tmp      %edx
 #define e_mask     %ecx
@@ -174,9 +178,9 @@
 	and      m_mask(r_ptr),e_lo
 	and      m_mask(r_ptr),e_hi
     #else
-	mov      r_lo,r_hi
-	movq     r_fp,\xmm0
-	shr      $32,r_hi
+	mov      q_lo,q_hi
+	movq     q_fp,\xmm0
+	shr      $32,q_hi
     .ifnb \nomask
 	and      m_mask(r_ptr),e_lo
 	and      m_mask(r_ptr),e_hi
@@ -326,7 +330,7 @@
 	movd     %xmm0,e_hi
     .endif
     #else
-	movq     %xmm0,r_fp
+	movq     %xmm0,q_fp
     #endif
 	jmp      \tail
 .endm
