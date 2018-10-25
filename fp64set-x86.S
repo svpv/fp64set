@@ -120,6 +120,7 @@
 #define q_tmp      %r8
 #define e_tmp      %r8d
 #define e_mask     %r9d
+#define q_loop     %r10
 #define e_loop     %r10d
 
 #else // System V ABI
@@ -146,6 +147,7 @@
 #define q_tmp      %rdx
 #define e_tmp      %edx
 #define e_mask     %ecx
+#define q_loop     %r8
 #define e_loop     %r8d
 
 #endif // System V ABI
@@ -666,7 +668,9 @@ FUNC(add3st0)
 	movhps   16(r_bb,r_hi,8),%xmm3
 	movdqa   %xmm4,%xmm1
 	pcmpeqQ  %xmm0,%xmm4
+#if defined(__i386__) || SSE4
 	movdqa   %xmm5,%xmm2
+#endif
 	pcmpeqQ  %xmm0,%xmm5
 	porQ3ac  %xmm5,%xmm4
 	movdqa   %xmm3,%xmm5
@@ -676,9 +680,9 @@ FUNC(add3st0)
 END(add3st0)
 
 FUNC(insert3)
-	saveXmm6
 	insertBegin
 
+#if defined(__i386__) || SSE4
 	// Numbers correspond to XMM registers.
 	// +---+---+
 	// |   3   |
@@ -691,6 +695,7 @@ FUNC(insert3)
 	//  buckets
 
 	// Check for free slots in b2[0,1] -> xmm2.
+	saveXmm6
 	xmmBlank r_hi,%xmm6 setAll0s=%xmm5
 	pcmpeqQ  %xmm6,%xmm2
 
@@ -732,6 +737,38 @@ FUNC(insert3)
 	add      r_tmp,r_lo
 	movq     %xmm0,(r_bb,r_lo,8)
 	justEnd
+#else
+	setBlank r_lo,q_tmp
+	cmp      (r_bb,r_lo,8),q_tmp
+	je       1f
+	setBlank r_hi,q_loop
+	cmp      (r_bb,r_hi,8),q_loop
+	je       2f
+	cmp      8(r_bb,r_lo,8),q_tmp
+	je       3f
+	cmp      8(r_bb,r_hi,8),q_loop
+	je       4f
+	cmp      16(r_bb,r_lo,8),q_tmp
+	je       5f
+	cmp      16(r_bb,r_hi,8),q_loop
+	je       6f
+
+	gonnaKick
+	jmp      NAME(kick3)
+
+1:	movq     %xmm0,(r_bb,r_lo,8)
+	justEnd
+2:	movq     %xmm0,(r_bb,r_hi,8)
+	justEnd
+3:	movq     %xmm0,8(r_bb,r_lo,8)
+	justEnd
+4:	movq     %xmm0,8(r_bb,r_hi,8)
+	justEnd
+5:	movq     %xmm0,16(r_bb,r_lo,8)
+	justEnd
+6:	movq     %xmm0,16(r_bb,r_hi,8)
+	justEnd
+#endif
 END(insert3)
 
 FUNC(kick3)
@@ -842,11 +879,12 @@ FUNC(has4st0)
 END(has4st0)
 
 FUNC(add4st0)
-	saveXmm6
-	saveXmm7
 	addBegin
 	shl      $5,r_lo
 	shl      $5,r_hi
+#if defined(__i386__) || SSE4
+	saveXmm6
+	saveXmm7
 	movdqa   (r_bb,r_lo,1),%xmm5
 	movdqa   (r_bb,r_hi,1),%xmm6
 	movdqa   %xmm5,%xmm1
@@ -864,11 +902,29 @@ FUNC(add4st0)
 	porQ4bd  %xmm6,%xmm5
 	restoreXmm7
 	addEnd   %xmm5 NAME(insert4) usingXmm6=1
+#else
+	// Only %xmm1 and %xmm3 need to be preserved.
+	movdqa   (r_bb,r_lo,1),%xmm5
+	movdqa   (r_bb,r_hi,1),%xmm2
+	movdqa   %xmm5,%xmm1
+	pcmpeqQ  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm2
+	porQ4ab  %xmm5,%xmm2
+	movdqa   16(r_bb,r_lo,1),%xmm5
+	movdqa   16(r_bb,r_hi,1),%xmm4
+	movdqa   %xmm5,%xmm3
+	pcmpeqQ  %xmm0,%xmm5
+	pcmpeqQ  %xmm0,%xmm4
+	porQ4cd  %xmm4,%xmm5
+	porQ4bd  %xmm2,%xmm5
+	addEnd   %xmm5 NAME(insert4)
+#endif
 END(add4st0)
 
 FUNC(insert4)
 	insertBegin
 
+#if defined(__i386__) || SSE4
 	// +---+---+
 	// |   |   |
 	// + 3 + 4 +
@@ -921,6 +977,46 @@ FUNC(insert4)
 	lea      (r_lo,r_tmp,8),r_lo
 	movq     %xmm0,(r_bb,r_lo,1)
 	justEnd
+#else
+	setBlank r_lo,q_tmp
+	cmp      (r_bb,r_lo,1),q_tmp
+	je       1f
+	setBlank r_hi,q_loop
+	cmp      (r_bb,r_hi,1),q_loop
+	je       2f
+	cmp      8(r_bb,r_lo,1),q_tmp
+	je       3f
+	cmp      8(r_bb,r_hi,1),q_loop
+	je       4f
+	cmp      16(r_bb,r_lo,1),q_tmp
+	je       5f
+	cmp      16(r_bb,r_hi,1),q_loop
+	je       6f
+	cmp      24(r_bb,r_lo,1),q_tmp
+	je       7f
+	cmp      24(r_bb,r_hi,1),q_loop
+	je       8f
+
+	gonnaKick
+	jmp      NAME(kick4)
+
+1:	movq     %xmm0,(r_bb,r_lo,1)
+	justEnd
+2:	movq     %xmm0,(r_bb,r_hi,1)
+	justEnd
+3:	movq     %xmm0,8(r_bb,r_lo,1)
+	justEnd
+4:	movq     %xmm0,8(r_bb,r_hi,1)
+	justEnd
+5:	movq     %xmm0,16(r_bb,r_lo,1)
+	justEnd
+6:	movq     %xmm0,16(r_bb,r_hi,1)
+	justEnd
+7:	movq     %xmm0,24(r_bb,r_lo,1)
+	justEnd
+8:	movq     %xmm0,24(r_bb,r_hi,1)
+	justEnd
+#endif
 END(insert4)
 
 FUNC(kick4)
@@ -977,6 +1073,7 @@ FUNC(kick4)
 END(kick4)
 
 FUNC(add4st1)
+#if defined(__i386__) || SSE4
 	saveXmm6
 	saveXmm7
 	addBegin st=%xmm7
@@ -1001,6 +1098,27 @@ FUNC(add4st1)
 	porQD    %xmm7,%xmm5
 	restoreXmm7
 	addEnd   %xmm5 NAME(insert4) usingXmm6=1
+#else
+	addBegin st=%xmm3
+	shl      $5,r_lo
+	shl      $5,r_hi
+	movdqa   (r_bb,r_lo,1),%xmm5
+	movdqa   (r_bb,r_hi,1),%xmm2
+	pcmpeqQ  %xmm0,%xmm3
+	movdqa   %xmm5,%xmm1
+	pcmpeqQ  %xmm0,%xmm5
+	porQ4ab  %xmm3,%xmm5
+	movdqa   16(r_bb,r_lo,1),%xmm4
+	pcmpeqQ  %xmm0,%xmm2
+	movdqa   %xmm4,%xmm3
+	pcmpeqQ  %xmm0,%xmm4
+	porQ4cd  %xmm2,%xmm4
+	movdqa   16(r_bb,r_hi,1),%xmm2
+	porQ4bd  %xmm4,%xmm5
+	pcmpeqQ  %xmm0,%xmm2
+	porQD    %xmm2,%xmm5
+	addEnd   %xmm5 NAME(insert4)
+#endif
 END(add4st1)
 
 FUNC(has4st1)
