@@ -464,7 +464,7 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
 	return false;
     set->bb = bb;
 
-    // Insert fp (no kicks required).
+    // Insert fp (no kicks required, set->cnt already bumped).
     size_t i = Hash1(fp, set->mask);
     uint64_t *b = bb + (bsize + 1) * i;
     if (b[0] == b[1])
@@ -477,6 +477,7 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
 	b[3] = fp;
 
     // Try to insert the stashed elements.
+    assert(set->nstash == 2);
     set->nstash = insertloop(bb, 2, set->stash, set->logsize, set->mask, bsize + 1);
     // The outcome determines which vtab functions will further be used.
     if (set->nstash == 0) {
@@ -484,17 +485,16 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
 	    SetVFuncs(set, 3, 0);
 	else
 	    SetVFuncs(set, 4, 0);
-	set->cnt += 3;
+	// Both inserted.
+	set->cnt += 2;
     }
     else {
 	if (bsize == 2)
 	    SetVFuncs(set, 3, 1);
 	else
 	    SetVFuncs(set, 4, 1);
-	if (set->nstash == 2)
-	    set->cnt += 2;
-	else {
-	    assert(set->nstash == 1);
+	if (set->nstash == 1) {
+	    // One inserted.
 	    set->stash[1] = set->stash[0];
 	    set->cnt++;
 	}
@@ -615,6 +615,7 @@ static bool fp64set_resize43(struct set *set, uint64_t fp)
 	return false;
     size_t nswap = 3;
     swap[0] = fp;
+    assert(set->nstash == 2);
     swap[1] = set->stash[0];
     swap[2] = set->stash[1];
 
@@ -647,19 +648,30 @@ static bool fp64set_resize43(struct set *set, uint64_t fp)
 
     size_t mask2 = 2 * nb - 1;
     nswap = insertloop(bb, nswap, swap, set->logsize + 1, mask2, 3);
-
+    if (nswap == 0) {
+	SetVFuncs(set, 3, 0);
+	set->cnt += 2;
+	set->nstash = 0;
+    }
+    else {
+	SetVFuncs(set, 3, 1);
+	set->stash[0] = swap[0];
+	if (nswap == 1) {
+	    set->cnt += 1;
+	    set->stash[1] = swap[0];
+	    set->nstash = 1;
+	}
+	else {
+	    assert(nswap == 2);
+	    set->stash[1] = swap[1];
+	    set->nstash = 2;
+	}
+    }
     free(swap);
-
-    assert(nswap == 0);
-    assert(set->nstash == 2);
-    set->cnt += 3;
 
     set->mask = mask2;
     set->logsize++;
-    set->nstash = 0;
     set->bsize = 3;
-
-    SetVFuncs(set, 3, 0);
 
     return true;
 }
@@ -667,14 +679,15 @@ static bool fp64set_resize43(struct set *set, uint64_t fp)
 static inline bool t_stash(struct set *set, uint64_t fp, int bsize)
 {
     assert(set->bsize == bsize);
-    set->cnt--;
     if (set->nstash == 0) {
+	set->cnt--;
 	set->nstash = 1;
 	set->stash[0] = set->stash[1] = fp;
 	SelectVFuncs(set, bsize, 1);
 	return true;
     }
     if (set->nstash == 1) {
+	set->cnt--;
 	set->nstash = 2;
 	set->stash[1] = fp;
 	return true;
