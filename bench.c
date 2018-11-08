@@ -84,18 +84,20 @@ void addDups(struct fp64set *set, uint64_t mask, size_t *np, uint64_t *tp)
 
 static int ITER = 23;
 
-double bench_addUniq(int bsize, int logsize)
+double bench_addUniq(int bsize, int logsize, double *fill)
 {
+    size_t nn = 0;
     size_t n = 0; uint64_t t = 0;
     for (int i = 0; i < (1<<ITER); i++) {
 	struct fp64set *set = fp64set_new(logsize);
 	size_t n1 = 0; uint64_t t1 = 0;
 	// Skip the stages preceding bsize.
 	for (int i = 2; i <= bsize; i++)
-	    addUniq(set, &n1, &t1);
+	    addUniq(set, &n1, &t1), nn += n1;
 	n += n1, t += t1;
 	fp64set_free(set);
     }
+    *fill = 100.0 * nn / (bsize << (logsize + ITER));
     return (double) t / n;
 }
 
@@ -245,9 +247,10 @@ int main(int argc, char **argv)
 	else if (strcmp(argv[i], "next3") == 0) b_next3 = 1;
 	else if (strcmp(argv[i], "next4") == 0) b_next4 = 1;
     }
-    if (b_add2u) printf("add2 uniq %.2f\n", bench_addUniq(2, nb));
-    if (b_add3u) printf("add3 uniq %.2f\n", bench_addUniq(3, nb));
-    if (b_add4u) printf("add4 uniq %.2f\n", bench_addUniq(4, nb));
+    double t, f;
+    if (b_add2u) t = bench_addUniq(2, nb, &f), printf("add2 uniq %.2f %.1f%%\n", t, f);
+    if (b_add3u) t = bench_addUniq(3, nb, &f), printf("add3 uniq %.2f %.1f%%\n", t, f);
+    if (b_add4u) t = bench_addUniq(4, nb, &f), printf("add4 uniq %.2f %.1f%%\n", t, f);
     // NB: dups incur extra costs of fmix64.
     if (b_add2d) printf("add2 dups %.2f\n", bench_addDups(2, nb));
     if (b_add3d) printf("add3 dups %.2f\n", bench_addDups(3, nb));
