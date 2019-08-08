@@ -93,47 +93,10 @@ static inline bool fp64set_del(struct fp64set *set, uint64_t fp)
     return set->del(FP64SET_aFP64(fp), set);
 }
 
-// For functions implemented in assembly, we can optimize the call by hiding it
-// into the asm() block and instructing the compiler that the function clobbers
-// fewer registers than permitted by the calling convention.
-#ifndef FP64SET_ASMCALL
-#define FP64SET_ASMCALL defined(__GNUC__)
-#endif
-
-// With System V x86-64 ABI, the very "callq" instruction clobbers the
-// red zone, which must be preserved.  This can be disabled if the enclosing
-// function uses __attribute__((ms_abi)), or is compiled with -mno-red-zone.
-#ifndef FP64SET_REDZONE
-#define FP64SET_REDZONE 1
-#endif
-
 // Check if a fingerprint is in the set.
 static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
-#if FP64SET_ASMCALL && defined(__x86_64__)
-    int ret;
-    asm(
-#if defined(_WIN32) || defined(__CYGWIN__)
-	"callq *%c3(%2)"
-	: "=a" (ret), "+c" (fp) : "d" (set),
-#else
-#if FP64SET_REDZONE
-	"add $-128,%%rsp"
-	"\n\t"
-#endif
-	"callq *%c3(%2)"
-#if FP64SET_REDZONE
-	"\n\t"
-	"sub $-128,%%rsp"
-#endif
-	: "=a" (ret), "+D" (fp) : "S" (set),
-#endif
-	  "i" (offsetof(struct fp64set, has))
-	: "cc", "r11", "xmm0", "xmm1", "xmm2", "xmm3");
-    return ret;
-#else
     return set->has(FP64SET_aFP64(fp), set);
-#endif
 }
 
 // Iterate the fingerprints in a set.  iter should be initialized with zero;
