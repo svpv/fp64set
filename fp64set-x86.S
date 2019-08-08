@@ -247,7 +247,7 @@
     #endif
 .endm
 
-// The frist part of insert() is sometimes named justAdd() - the easy case
+// The first part of insert() is sometimes named justAdd() - the easy case
 // when there is a free slot in either b1[] or b2[].  This is how it ends.
 .macro insertEnd
     #ifdef __i386__
@@ -323,7 +323,7 @@
 
 // The kicking primitive.  The new item in xmm0 is "pressed" from the top,
 // and the resulting xmm0 is supposed to overwrite the memory where xmm1
-// comes from; xmm1 is not cobbered.
+// comes from; xmm1 is not clobbered.
 //       |   |
 //       +   +
 //  xmm0 | 3 |           +---+
@@ -344,7 +344,7 @@
 .endm
 
 // Continuing with the above picture, xmm1 corresponds to the bucket
-// at bb[r_lo].  The fingerprint "1" has been kiked out of the bucket,
+// at bb[r_lo].  The fingerprint "1" has been kicked out of the bucket,
 // but xmm1 has not been clobbered.  So we need to find the alternative
 // bucket for xmm1[0], to insert from the top; this will be bb[r_hi].
 .macro altHi shl
