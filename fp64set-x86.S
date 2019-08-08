@@ -249,7 +249,7 @@
 
 // The frist part of insert() is sometimes named justAdd() - the easy case
 // when there is a free slot in either b1[] or b2[].  This is how it ends.
-.macro justEnd
+.macro insertEnd
     #ifdef __i386__
 	mov      save_ebx(%esp),%ebx
 	FREE
@@ -261,7 +261,7 @@
 // Otherwise, the second part of insert() is entered, the kickAdd() loop.
 // An element is kicked out from the bottom of b1[] and reinserted at the
 // top of its alternative bucket.
-.macro gonnaKick
+.macro kickBegin
     #ifdef __i386__
 	mov      %esi,save_esi(%esp)
 	mov      %edi,save_edi(%esp)
@@ -427,7 +427,7 @@ FUNC(insert2)
 	test     e_tmp,e_tmp
 	jnz      1f
 
-	gonnaKick
+	kickBegin
 	jmp      NAME(kick2)
 
 1:	bsf      e_tmp,e_tmp
@@ -438,7 +438,7 @@ FUNC(insert2)
 	shr      $3,e_tmp
 	lea      (r_lo,r_tmp,8),r_lo
 	movq     %xmm0,(r_bb,r_lo,1)
-	justEnd
+	insertEnd
 END(insert2)
 
 FUNC(kick2)
@@ -579,7 +579,7 @@ FUNC(insert3)
 	test     e_tmp,e_tmp
 	jnz      1f
 
-	gonnaKick
+	kickBegin
 	jmp      NAME(kick3)
 
 1:	bsf      e_tmp,e_tmp
@@ -590,7 +590,7 @@ FUNC(insert3)
 	shr      $2,e_tmp
 	add      r_tmp,r_lo
 	movq     %xmm0,(r_bb,r_lo,8)
-	justEnd
+	insertEnd
 END(insert3)
 
 FUNC(kick3)
@@ -758,7 +758,7 @@ FUNC(insert4)
 	test     e_tmp,e_tmp
 	jnz      1f
 
-	gonnaKick
+	kickBegin
 	jmp      NAME(kick4)
 
 1:	bsf      e_tmp,e_tmp
@@ -769,7 +769,7 @@ FUNC(insert4)
 	shr      $2,e_tmp
 	lea      (r_lo,r_tmp,8),r_lo
 	movq     %xmm0,(r_bb,r_lo,1)
-	justEnd
+	insertEnd
 END(insert4)
 
 FUNC(kick4)
