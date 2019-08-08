@@ -143,17 +143,6 @@ static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsi
     MakeVFuncs(4, 1)
 MakeAllVFuncs
 
-// Instantiate SSE2 and SSE4 prototypes.
-#if defined(__i386__) || defined(__x86_64__)
-#undef MakeVFuncs
-#define MakeVFuncs(BS, ST) \
-    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST##sse2(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST##sse2(FP64SET_pFP64, const void *set); \
-    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const void *set);
-MakeAllVFuncs
-#endif
-
 // How to initialize vtab slots.
 #define SetVFuncsExt(set, BS, ST, hext, aext)		\
 do {							\
@@ -162,39 +151,23 @@ do {							\
     set->vt.del = fp64set_del##BS##st##ST;		\
 } while (0)						\
 
-#ifdef FP64SET_FORCE_GENERIC
-#if defined(__x86_64__) && FP64SET_ASMCALL
-// Gerneric has() would break the restricted calling convention.
-#define SetVFuncs(set, BS, ST) SetVFuncsExt(set, BS, ST, sse2, )
-#else
-#define SetVFuncs(set, BS, ST) SetVFuncsExt(set, BS, ST, , )
-#endif
-
-#elif defined(FP64SET_FORCE_SSE2) && (defined(__i386__) || defined(__x86_64__))
-#define SetVFuncs(set, BS, ST) SetVFuncsExt(set, BS, ST, sse2, sse2)
-
-#elif defined(__x86_64__) || defined(__SSE2__)
+// We have SSE4 assembly.
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(FP64SET_NOASM)
+#undef MakeVFuncs
+#define MakeVFuncs(BS, ST) \
+    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, void *set); \
+    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const void *set);
+MakeAllVFuncs
 #define SetVFuncs(set, BS, ST)				\
 do {							\
     if (__builtin_cpu_supports("sse4.1"))		\
 	SetVFuncsExt(set, BS, ST, sse4, sse4);		\
-    else						\
-	SetVFuncsExt(set, BS, ST, sse2, sse2);		\
-} while (0)
-
-#elif defined(__i386__)
-#define SetVFuncs(set, BS, ST)				\
-do {							\
-    if (__builtin_cpu_supports("sse4.1"))		\
-	SetVFuncsExt(set, BS, ST, sse4, sse4);		\
-    else if (__builtin_cpu_supports("sse2"))		\
-	SetVFuncsExt(set, BS, ST, sse2, sse2);		\
     else						\
 	SetVFuncsExt(set, BS, ST, , );			\
 } while (0)
-
 #else // non-x86
-#define SetVFuncs(set, BS, ST) SetVFuncsExt(set, BS, ST, , )
+#define SetVFuncs(set, BS, ST) \
+	SetVFuncsExt(set, BS, ST, , )
 #endif
 
 // In case BS is not a literal.
