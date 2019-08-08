@@ -67,7 +67,6 @@ struct fp64set {
     uint64_t stash[2];
     // Pass fp first, eax:edx may hold hash() return value.
     int (FP64SET_FASTCALL *add)(FP64SET_pFP64, void *set);
-    bool (FP64SET_FASTCALL *del)(FP64SET_pFP64, void *set);
     // Returns int, let the caller booleanize (can be optimized out).
     int (FP64SET_FASTCALL *has)(FP64SET_pFP64, const void *set);
 };
@@ -87,30 +86,11 @@ static inline int fp64set_add(struct fp64set *set, uint64_t fp)
     return set->add(FP64SET_aFP64(fp), set);
 }
 
-// Delete a fingerprint from a set, returns false if not found.
-static inline bool fp64set_del(struct fp64set *set, uint64_t fp)
-{
-    return set->del(FP64SET_aFP64(fp), set);
-}
-
 // Check if a fingerprint is in the set.
 static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
     return set->has(FP64SET_aFP64(fp), set);
 }
-
-// Iterate the fingerprints in a set.  iter should be initialized with zero;
-// it holds the position of the next fingerprint.  On each call, a pointer
-// to a fingerprint is returned and the position is advanced.  After all the
-// fingerprints are traversed, returns NULL and resets the position to zero.
-// Does not interact well with fp64set_add, but can be used with fp64set_del:
-// after removing the last returned fingerprint, the caller should decrement
-// the iterator (because fingerprints are moved down the bucket).  Or, when
-// non-last fingerprint is deleted, the caller should still decrement the
-// iterator, and the next call may return the same fingerprint again (because
-// fingerprints are moved down in a different bucket).
-const uint64_t *FP64SET_FASTCALL fp64set_next(const struct fp64set *set,
-					      size_t *iter);
 
 #ifdef __cplusplus
 }

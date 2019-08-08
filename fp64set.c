@@ -131,9 +131,8 @@ static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsi
 
 // Instantiate generic functions, only prototypes for now.
 #define MakeVFuncs(BS, ST) \
-    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL bool fp64set_del##BS##st##ST(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set);
+    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, void *set); \
+    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set);
 #define MakeAllVFuncs	\
     MakeVFuncs(2, 0)	\
     MakeVFuncs(2, 1)	\
@@ -144,30 +143,29 @@ static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsi
 MakeAllVFuncs
 
 // How to initialize vtab slots.
-#define SetVFuncsExt(set, BS, ST, hext, aext)		\
+#define SetVFuncsExt(set, BS, ST, ext)			\
 do {							\
-    set->vt.has = fp64set_has##BS##st##ST##hext;	\
-    set->vt.add = fp64set_add##BS##st##ST##aext;	\
-    set->vt.del = fp64set_del##BS##st##ST;		\
+    set->vt.add = fp64set_add##BS##st##ST##ext;		\
+    set->vt.has = fp64set_has##BS##st##ST##ext;		\
 } while (0)						\
 
 // We have SSE4 assembly.
 #if (defined(__i386__) || defined(__x86_64__)) && !defined(FP64SET_NOASM)
 #undef MakeVFuncs
 #define MakeVFuncs(BS, ST) \
-    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const void *set);
+    HIDDEN FP64SET_FASTCALL int fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, void *set); \
+    HIDDEN FP64SET_FASTCALL int fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const void *set);
 MakeAllVFuncs
 #define SetVFuncs(set, BS, ST)				\
 do {							\
     if (__builtin_cpu_supports("sse4.1"))		\
-	SetVFuncsExt(set, BS, ST, sse4, sse4);		\
+	SetVFuncsExt(set, BS, ST, sse4);		\
     else						\
-	SetVFuncsExt(set, BS, ST, , );			\
+	SetVFuncsExt(set, BS, ST, );			\
 } while (0)
 #else // non-x86
 #define SetVFuncs(set, BS, ST) \
-	SetVFuncsExt(set, BS, ST, , )
+	SetVFuncsExt(set, BS, ST, )
 #endif
 
 // In case BS is not a literal.
@@ -180,9 +178,6 @@ do {							\
     else						\
 	SetVFuncs(set, 4, ST);				\
 } while (0)
-
-// The sentinels at the end of bb[], for fp64set_next.
-#define SENTINELS 3
 
 struct fp64set *fp64set_new(int logsize)
 {
@@ -198,13 +193,12 @@ struct fp64set *fp64set_new(int logsize)
 
     // Starting with two slots per bucket.
     size_t nb = (size_t) 1 << logsize;
-    uint64_t *bb = calloc(2 * nb + SENTINELS, sizeof(uint64_t));
+    uint64_t *bb = calloc(2 * nb, sizeof(uint64_t));
     if (!bb)
 	return NULL;
 
     // The blank value for bb[0][*] slots is UINT64_MAX.
     memset(A16(bb), 0xff, 2 * sizeof(uint64_t));
-    memset(A16(bb + 2 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     struct set *set = malloc(sizeof *set);
     if (!set)
@@ -380,10 +374,9 @@ static inline size_t insertloop(uint64_t *bb, size_t nswap, uint64_t *swap,
 static inline uint64_t *reinterp23(uint64_t *bb, size_t nb)
 {
     // Resizing e.g. 2GB -> 3GB cannot trigger size_t overflow.
-    bb = realloc(bb, (3 * nb + SENTINELS) * sizeof(uint64_t));
+    bb = realloc(bb, 3 * nb * sizeof(uint64_t));
     if (!bb)
 	return NULL;
-    memset(A16(bb + 3 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 3-tier array.
     //
@@ -406,10 +399,9 @@ static inline uint64_t *reinterp34(uint64_t *bb, size_t nb, int logsize)
     // On 32-bit platforms, going 3GB -> 4GB will result in size_t overflow.
     if (logsize >= 27 && sizeof(size_t) < 5)
 	return errno = ENOMEM, NULL;
-    bb = realloc(bb, (4 * nb + SENTINELS) * sizeof(uint64_t));
+    bb = realloc(bb, 4 * nb * sizeof(uint64_t));
     if (!bb)
 	return NULL;
-    memset(A16(bb + 4 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 4-tier array.
     //
@@ -486,10 +478,9 @@ static inline uint64_t *reinterp43(uint64_t *bb, size_t nb, int logsize)
     // The logsize is going up, hitting the hash space limit?
     if (logsize >= 32)
 	return errno = E2BIG, NULL;
-    bb = realloc(bb, (6 * nb + SENTINELS) * sizeof(uint64_t));
+    bb = realloc(bb, 6 * nb * sizeof(uint64_t));
     if (!bb)
 	return NULL;
-    memset(A16(bb + 6 * nb), 0xff, SENTINELS * sizeof(uint64_t));
 
     // Reinterpret as a 3-tier array.
     //
@@ -726,98 +717,12 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
     return -1;
 }
 
-static inline int t_del(struct set *set, uint64_t fp, bool nstash, int bsize)
-{
-#define DelBucketRet(b, blank)			\
-    return b[bsize-1] = blank, set->cnt--, 1
-#define DelBucket(b, blank)			\
-    do {					\
-	if (b[0] == fp) {			\
-	    b[0] = b[1];			\
-	    if (bsize > 2) b[1] = b[2];		\
-	    if (bsize > 3) b[2] = b[3];		\
-	    DelBucketRet(b, blank);		\
-	}					\
-	if (b[1] == fp) {			\
-	    if (bsize > 2) b[1] = b[2];		\
-	    if (bsize > 3) b[2] = b[3];		\
-	    DelBucketRet(b, blank);		\
-	}					\
-	if (bsize > 2 && b[2] == fp) {		\
-	    if (bsize > 3) b[2] = b[3];		\
-	    DelBucketRet(b, blank);		\
-	}					\
-	if (bsize > 3 && b[3] == fp)		\
-	    DelBucketRet(b, blank);		\
-    } while (0)
-
-    dFP2IB(fp, set->bb, set->mask);
-    uint64_t blank1 = 0 - (i1 == 0);
-    uint64_t blank2 = 0 - (i2 == 0);
-    DelBucket(b1, blank1);
-    DelBucket(b2, blank2);
-    if (nstash == 0)
-	return 0;
-    if (set->stash[0] == fp) {
-	// Only one fingerprint in the stash?
-	if (set->stash[1] == fp) {
-	    set->stash[0] = set->stash[1] = 0;
-	    set->nstash = 0;
-	    // Switch vfuncs to the ones without stash.
-	    SelectVFuncs(set, bsize, 0);
-	    return 1;
-	}
-	// Two fingerprints in the stash.
-	set->stash[0] = set->stash[1];
-	set->stash[1] = 0;
-	set->nstash = 1;
-	return 1;
-    }
-    if (set->stash[1] == fp) {
-	set->stash[1] = 0;
-	set->nstash = 1;
-	return 1;
-    }
-    return 0;
-}
-
-static inline uint64_t *t_next(struct set *set, size_t *iter, bool nstash, int bsize)
-{
-    size_t i = *iter;
-    uint64_t *bb = set->bb;
-    size_t n = bsize * (set->mask + 1);
-    // The first bucket?
-    for (; unlikely(i < bsize); i++)
-	if (bb[i] != UINT64_MAX)
-	    return *iter = i + 1, &bb[i];
-    // The rest of the buckets, iterate as flat array.
-    while (bb[i] == 0)
-	i++;
-    if (i < n)
-	return *iter = i + 1, &bb[i];
-    if (nstash == 0)
-	return *iter = 0, NULL;
-    if (i == n)
-	return *iter = n + 1, &set->stash[0];
-    if (i == n + 1 && set->stash[0] != set->stash[1])
-	return *iter = n + 2, &set->stash[1];
-    return *iter = 0, NULL;
-}
-
-FP64SET_FASTCALL const uint64_t *fp64set_next(const struct fp64set *arg, size_t *iter)
-{
-    struct set *set = (void *) arg;
-    return t_next(set, iter, set->nstash, set->bsize);
-}
-
 #undef MakeVFuncs
 #define MakeVFuncs(BS, ST) \
-    HIDDEN FP64SET_FASTCALL int  fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set) \
-    { return t_has(set, LOHI2FP, ST, BS); }						 \
-    HIDDEN FP64SET_FASTCALL int  fp64set_add##BS##st##ST(FP64SET_pFP64, void *set)	 \
-    { return t_add(set, LOHI2FP, ST, BS); }						 \
-    HIDDEN FP64SET_FASTCALL bool fp64set_del##BS##st##ST(FP64SET_pFP64, void *set)	 \
-    { return t_del(set, LOHI2FP, ST, BS); }
+    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, void *set)	\
+    { return t_add(set, LOHI2FP, ST, BS); }						\
+    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set) \
+    { return t_has(set, LOHI2FP, ST, BS); }
 MakeAllVFuncs
 
 // ex:set ts=8 sts=4 sw=4 noet:
