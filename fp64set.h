@@ -19,13 +19,19 @@
 // SOFTWARE.
 
 #pragma once
+#ifndef __cplusplus
 #include <stddef.h>
 #include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#else
 #include <stdbool.h>
+#else
+#include <cstddef>
+#include <cstdint>
+extern "C" {
+#endif
+
+// Beta version, static linking only.
+#ifdef __GNUC__
+#pragma GCC visibility push(hidden)
 #endif
 
 // Create a new set of 64-bit fingerprints.  The logsize parameter specifies
@@ -61,14 +67,30 @@ void fp64set_free(struct fp64set *set);
 #define FP64SET_aFP64(fp) fp
 #endif
 
-// Exposes only a part of the structure, just enough to inline the calls.
+// Expose the structure, to inline vfunc calls.
 struct fp64set {
-    // This guy needs to be 16-byte aligned, have to expose it.
+    // To reduce the failure rate, one or two fingerprints can be stashed.
+    // When only one fingerprint is stashed, we have stash[0] == stash[1].
+    // This guy had better be aligned to a 16-byte boundary, so it goes first.
     uint64_t stash[2];
-    // Pass fp first, eax:edx may hold hash() return value.
-    int (FP64SET_FASTCALL *add)(FP64SET_pFP64, void *set);
-    // Returns int, let the caller booleanize (can be optimized out).
-    int (FP64SET_FASTCALL *has)(FP64SET_pFP64, const void *set);
+    // Virtual functions, depend on the bucket size, switched on resize.
+    // Pass fp arg first, eax:edx may hold hash() return value.
+    int (FP64SET_FASTCALL *add)(FP64SET_pFP64, struct fp64set *set);
+    int (FP64SET_FASTCALL *has)(FP64SET_pFP64, const struct fp64set *set);
+    // The buckets (malloc'd); each bucket has bsize slots.
+    // Two-dimensional structure is emulated with pointer arithmetic.
+    uint64_t *bb;
+    // The total number of unique fingerprints added to buckets,
+    // not including the stashed fingerprints.
+    size_t cnt;
+    // The number of buckets - 1, helps indexing into the buckets.
+    uint32_t mask;
+    // The number of buckets, the logarithm: 4..32.
+    uint8_t logsize;
+    // The number of slots in each bucket: 2, 3, or 4.
+    uint8_t bsize;
+    // The number of fingerprints stashed: 0, 1, or 2.
+    uint8_t nstash;
 };
 
 // Add a 64-bit fingerprint to the set.  Returns 0 for a previously added
@@ -89,8 +111,15 @@ static inline int fp64set_add(struct fp64set *set, uint64_t fp)
 // Check if a fingerprint is in the set.
 static inline bool fp64set_has(const struct fp64set *set, uint64_t fp)
 {
+    // An implementation detail: set->has returns int because in SSE assembly
+    // we can simply do "pmovmskb %xmm,%eax".  Conversion to bool can usually
+    // be optimized out - the compiler should "test %eax,%eax" instead of %al.
     return set->has(FP64SET_aFP64(fp), set);
 }
+
+#ifdef __GNUC__
+#pragma GCC visibility pop
+#endif
 
 #ifdef __cplusplus
 }

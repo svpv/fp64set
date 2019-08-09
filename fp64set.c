@@ -25,31 +25,6 @@
 #include <errno.h>
 #include "fp64set.h"
 
-// The real fp64set structure (upconverted from "void *set").
-struct set {
-    // To reduce the failure rate, one or two fingerprints can be stashed.
-    // When only one fingerprint is stashed, we have stash[0] == stash[1].
-    union {
-	uint64_t stash[2];
-	// Virtual functions (public struct).
-	struct fp64set vt;
-    };
-    // The number of buckets - 1, helps indexing into the buckets.
-    size_t mask;
-    // The buckets (malloc'd); each bucket has bsize slots.
-    // Two-dimensional structure is emulated with pointer arithmetic.
-    uint64_t *bb;
-    // The total number of unique fingerprints added to buckets,
-    // not including the stashed fingerprints.
-    size_t cnt;
-    // The number of fingerprints stashed: 0, 1, or 2.
-    int nstash;
-    // The number of buckets, the logarithm: 4..32.
-    int logsize;
-    // The number of slots in each bucket: 2, 3, or 4.
-    int bsize;
-};
-
 // Make two indexes out of a fingerprint.
 // Fingerprints are treated as two 32-bit hash values for this purpose.
 #define Hash1(fp, mask) ((fp >> 00) & mask)
@@ -123,7 +98,7 @@ static inline int has(uint64_t fp, uint64_t *b1, uint64_t *b2,
 #endif
 
 // Template for set->has virtual functions.
-static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsize)
+static inline int t_has(const struct fp64set *set, uint64_t fp, bool nstash, int bsize)
 {
     dFP2IB(fp, set->bb, set->mask);
     return has(fp, b1, b2, nstash, set->stash, bsize);
@@ -131,8 +106,8 @@ static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsi
 
 // Instantiate generic functions, only prototypes for now.
 #define MakeVFuncs(BS, ST) \
-    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, void *set); \
-    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set);
+    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, struct fp64set *set); \
+    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const struct fp64set *set);
 #define MakeAllVFuncs	\
     MakeVFuncs(2, 0)	\
     MakeVFuncs(2, 1)	\
@@ -142,19 +117,19 @@ static inline int t_has(const struct set *set, uint64_t fp, bool nstash, int bsi
     MakeVFuncs(4, 1)
 MakeAllVFuncs
 
-// How to initialize vtab slots.
+// How to initialize vfunc slots.
 #define SetVFuncsExt(set, BS, ST, ext)			\
 do {							\
-    set->vt.add = fp64set_add##BS##st##ST##ext;		\
-    set->vt.has = fp64set_has##BS##st##ST##ext;		\
+    set->add = fp64set_add##BS##st##ST##ext;		\
+    set->has = fp64set_has##BS##st##ST##ext;		\
 } while (0)						\
 
 // We have SSE4 assembly.
 #if (defined(__i386__) || defined(__x86_64__)) && !defined(FP64SET_NOASM)
 #undef MakeVFuncs
 #define MakeVFuncs(BS, ST) \
-    HIDDEN FP64SET_FASTCALL int fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, void *set); \
-    HIDDEN FP64SET_FASTCALL int fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const void *set);
+    HIDDEN FP64SET_FASTCALL int fp64set_add##BS##st##ST##sse4(FP64SET_pFP64, struct fp64set *set); \
+    HIDDEN FP64SET_FASTCALL int fp64set_has##BS##st##ST##sse4(FP64SET_pFP64, const struct fp64set *set);
 MakeAllVFuncs
 #define SetVFuncs(set, BS, ST)				\
 do {							\
@@ -200,16 +175,16 @@ struct fp64set *fp64set_new(int logsize)
     // The blank value for bb[0][*] slots is UINT64_MAX.
     memset(A16(bb), 0xff, 2 * sizeof(uint64_t));
 
-    struct set *set = malloc(sizeof *set);
+    struct fp64set *set = malloc(sizeof *set);
     if (!set)
 	return free(bb), NULL;
 
     SetVFuncs(set, 2, 0);
 
-    set->mask = nb - 1;
-    set->bb = bb;
     set->stash[0] = set->stash[1] = 0;
+    set->bb = bb;
     set->cnt = 0;
+    set->mask = nb - 1;
     set->nstash = 0;
     set->logsize = logsize;
     set->bsize = 2;
@@ -233,9 +208,8 @@ static inline bool freeSlot(uint64_t fp, size_t i)
 #include <t1ha.h>
 #endif
 
-void fp64set_free(struct fp64set *arg)
+void fp64set_free(struct fp64set *set)
 {
-    struct set *set = (void *) arg;
     if (!set)
 	return;
 #ifdef FP64SET_DEBUG
@@ -420,7 +394,7 @@ static inline uint64_t *reinterp34(uint64_t *bb, size_t nb, int logsize)
     return bb;
 }
 
-static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
+static inline bool t_resize(struct fp64set *set, uint64_t fp, int bsize)
 {
     uint64_t *bb = bsize == 2 ?
 	    reinterp23(set->bb, set->mask + 1) :
@@ -444,7 +418,7 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
     // Try to insert the stashed elements.
     assert(set->nstash == 2);
     set->nstash = insertloop(bb, 2, set->stash, set->logsize, set->mask, bsize + 1);
-    // The outcome determines which vtab functions will further be used.
+    // The outcome determines which vfuncs will further be used.
     if (set->nstash == 0) {
 	if (bsize == 2)
 	    SetVFuncs(set, 3, 0);
@@ -470,8 +444,8 @@ static inline bool t_resize(struct set *set, uint64_t fp, int bsize)
     return true;
 }
 
-static bool fp64set_resize23(struct set *set, uint64_t fp) { return t_resize(set, fp, 2); }
-static bool fp64set_resize34(struct set *set, uint64_t fp) { return t_resize(set, fp, 3); }
+static bool fp64set_resize23(struct fp64set *set, uint64_t fp) { return t_resize(set, fp, 2); }
+static bool fp64set_resize34(struct fp64set *set, uint64_t fp) { return t_resize(set, fp, 3); }
 
 static inline uint64_t *reinterp43(uint64_t *bb, size_t nb, int logsize)
 {
@@ -566,7 +540,7 @@ static inline uint64_t *reinterp43(uint64_t *bb, size_t nb, int logsize)
     return bb;
 }
 
-static bool fp64set_resize43(struct set *set, uint64_t fp)
+static bool fp64set_resize43(struct fp64set *set, uint64_t fp)
 {
     // The only point of deliberate failure:
     // bucket size = 4, fill factor < 50%.
@@ -640,7 +614,7 @@ static bool fp64set_resize43(struct set *set, uint64_t fp)
     return true;
 }
 
-static inline bool t_stash(struct set *set, uint64_t fp, int bsize)
+static inline bool t_stash(struct fp64set *set, uint64_t fp, int bsize)
 {
     assert(set->bsize == bsize);
     if (set->nstash == 0) {
@@ -668,7 +642,7 @@ static inline bool t_stash(struct set *set, uint64_t fp, int bsize)
 #define dFP (void)0
 #endif
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(FP64SET_pFP64, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(FP64SET_pFP64, struct fp64set *set)
 {
     dFP;
     if (t_stash(set, fp, 2))
@@ -678,7 +652,7 @@ HIDDEN FP64SET_FASTCALL int fp64set_insert2tail(FP64SET_pFP64, struct set *set)
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(FP64SET_pFP64, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(FP64SET_pFP64, struct fp64set *set)
 {
     dFP;
     if (t_stash(set, fp, 3))
@@ -688,7 +662,7 @@ HIDDEN FP64SET_FASTCALL int fp64set_insert3tail(FP64SET_pFP64, struct set *set)
     return -1;
 }
 
-HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(FP64SET_pFP64, struct set *set)
+HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(FP64SET_pFP64, struct fp64set *set)
 {
     dFP;
     if (t_stash(set, fp, 4))
@@ -699,7 +673,7 @@ HIDDEN FP64SET_FASTCALL int fp64set_insert4tail(FP64SET_pFP64, struct set *set)
 }
 
 // Template for virtual functions.
-static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
+static inline int t_add(struct fp64set *set, uint64_t fp, bool nstash, int bsize)
 {
     dFP2IB(fp, set->bb, set->mask);
     if (has(fp, b1, b2, nstash, set->stash, bsize))
@@ -719,9 +693,9 @@ static inline int t_add(struct set *set, uint64_t fp, bool nstash, int bsize)
 
 #undef MakeVFuncs
 #define MakeVFuncs(BS, ST) \
-    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, void *set)	\
-    { return t_add(set, LOHI2FP, ST, BS); }						\
-    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const void *set) \
+    static FP64SET_FASTCALL int fp64set_add##BS##st##ST(FP64SET_pFP64, struct fp64set *set) \
+    { return t_add(set, LOHI2FP, ST, BS); } \
+    static FP64SET_FASTCALL int fp64set_has##BS##st##ST(FP64SET_pFP64, const struct fp64set *set) \
     { return t_has(set, LOHI2FP, ST, BS); }
 MakeAllVFuncs
 
