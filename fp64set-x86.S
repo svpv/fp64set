@@ -33,16 +33,16 @@
 
 #if defined(__i386__) || defined(__ILP32__)
 #define m_stash    0
-#define m_mask     28
-#define m_bb       32
-#define m_cnt      36
-#define m_logsize  44
+#define m_bb       24
+#define m_cnt      28
+#define m_mask     32
+#define m_logsize  36
 #else
 #define m_stash    0
-#define m_mask     40
-#define m_bb       48
-#define m_cnt      56
-#define m_logsize  68
+#define m_bb       32
+#define m_cnt      40
+#define m_mask     48
+#define m_logsize  52
 #endif
 
 #if defined(__i386__)
@@ -267,10 +267,10 @@
 	mov      %edi,save_edi(%esp)
 	mov      save_ptr(%esp),%ebx
 	mov      m_mask(%ebx),e_mask
-	mov      m_logsize(%ebx),e_loop
+	movzbl   m_logsize(%ebx),e_loop
     #else
 	// e_mask already loaded in argBegin.
-	mov      m_logsize(r_ptr),e_loop
+	movzbl   m_logsize(r_ptr),e_loop
     #endif
 	shl      $1,e_loop
 .endm
